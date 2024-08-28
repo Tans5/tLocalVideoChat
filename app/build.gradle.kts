@@ -22,7 +22,7 @@ android {
 
     packaging {
         resources {
-            excludes.addAll(listOf("META-INF/INDEX.LIST", "META-INF/io.netty.versions.properties"))
+            excludes.addAll(listOf("META-INF/INDEX.LIST", "META-INF/io.netty.versions.properties", "/META-INF/{AL2.0,LGPL2.1}"))
         }
     }
 
@@ -38,6 +38,10 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
+
+        viewBinding {
+            enable = true
+        }
     }
     kotlinOptions {
         jvmTarget = "1.8"
