@@ -33,7 +33,8 @@ class MainActivity : BaseCoroutineStateActivity<Unit>(Unit) {
             }.getOrNull() ?: false
             if (grant) {
                 // TODO: test code.
-                val webRtc = WebRtc(this@MainActivity.applicationContext, null, null)
+                val webRtc = WebRtc(this@MainActivity.applicationContext)
+
             } else {
                 finish()
             }
