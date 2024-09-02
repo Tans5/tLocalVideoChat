@@ -220,13 +220,17 @@ class BroadcastSender :
         }
     }
 
-    fun stop() {
+    suspend fun stop() {
+        lock.withLock {
+            senderTask.getAndSet(null)?.stopTask()
+            waitingConnectServerTask.getAndSet(null)?.stopTask()
+            updateState { BroadcastSenderState.NoConnection }
+        }
+    }
+
+    fun release() {
         launch {
-            lock.withLock {
-                senderTask.getAndSet(null)?.stopTask()
-                waitingConnectServerTask.getAndSet(null)?.stopTask()
-                updateState { BroadcastSenderState.NoConnection }
-            }
+            stop()
             cancel()
         }
     }
