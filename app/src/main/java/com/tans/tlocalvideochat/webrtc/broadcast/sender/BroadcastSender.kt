@@ -52,6 +52,23 @@ class BroadcastSender :
         AtomicReference(null)
     }
 
+    private val waitingConnectServer  by lazy {
+        simplifyServer<RequestConnectReq, RequestConnectResp>(
+            requestType = SenderMsgType.ConnectReq.type,
+            responseType = SenderMsgType.ConnectResp.type,
+            log = AppLog,
+            onRequest = { _, ra, req, isNew ->
+                if (ra != null && isNew) {
+                    AppLog.d(TAG, "Receive client request: ra=$ra, req=$req")
+                    this@BroadcastSender.launch {
+                        connectRequestFlow.emit(ConnectRequest(request = req, remoteAddress = ra.address))
+                    }
+                }
+                RequestConnectResp(Const.DEVICE_NAME)
+            }
+        )
+    }
+
     fun observeConnectRequest(): Flow<ConnectRequest> = connectRequestFlow
 
     suspend fun start(localAddress: InetAddress) {
@@ -84,22 +101,6 @@ class BroadcastSender :
 
 
             // Waiting connect server task.
-            val waitingConnectServer = simplifyServer<RequestConnectReq, RequestConnectResp>(
-                requestType = SenderMsgType.ConnectReq.type,
-                responseType = SenderMsgType.ConnectResp.type,
-                log = AppLog,
-                onRequest = { _, ra, req, isNew ->
-                    if (ra != null && isNew) {
-                        AppLog.d(TAG, "Receive client request: ra=$ra, req=$req")
-                        runCatching {
-                            this@BroadcastSender.launch {
-                                connectRequestFlow.emit(ConnectRequest(request = req, remoteAddress = ra.address))
-                            }
-                        }
-                    }
-                    RequestConnectResp(Const.DEVICE_NAME)
-                }
-            )
             val waitingConnectServerTask = NettyUdpConnectionTask(
                 connectionType = NettyUdpConnectionTask.Companion.ConnectionType.Bind(
                     address = localAddress,
@@ -219,13 +220,15 @@ class BroadcastSender :
         }
     }
 
-    suspend fun stop() {
-        lock.withLock {
-            senderTask.getAndSet(null)?.stopTask()
-            waitingConnectServerTask.getAndSet(null)?.stopTask()
-            updateState { BroadcastSenderState.NoConnection }
+    fun stop() {
+        launch {
+            lock.withLock {
+                senderTask.getAndSet(null)?.stopTask()
+                waitingConnectServerTask.getAndSet(null)?.stopTask()
+                updateState { BroadcastSenderState.NoConnection }
+            }
+            cancel()
         }
-        cancel()
     }
 
     companion object {
