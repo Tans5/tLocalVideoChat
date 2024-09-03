@@ -34,7 +34,7 @@ import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicReference
 
 class BroadcastSender(
-    private val broadcastSendDuration: Long = 500L
+    private val broadcastSendDuration: Long = 1000L
 ) :
     CoroutineState<BroadcastSenderState> by CoroutineState(BroadcastSenderState.NoConnection),
     CoroutineScope by CoroutineScope(Dispatchers.IO) {
@@ -116,6 +116,7 @@ class BroadcastSender(
             waitingConnectServerTask.registerServer(waitingConnectServer)
             val (waitingConnectServerStateFlow, waitingConnectServerObserver) = createStateFlowObserver()
             waitingConnectServerTask.addObserver(waitingConnectServerObserver)
+            waitingConnectServerTask.startTask()
             val waitingConnectServerResult = waitingConnectServerStateFlow.connectionActiveOrClosed()
             if (!waitingConnectServerResult) {
                 senderTask.stopTask()
@@ -123,6 +124,7 @@ class BroadcastSender(
                 updateState { BroadcastSenderState.NoConnection }
                 error("Start waiting connect server task fail.")
             }
+            AppLog.d(TAG, "Start waiting connect server success.")
 
             // Connection is created, do send broadcast and waiting connection close.
             val job = runCatching {
@@ -138,6 +140,7 @@ class BroadcastSender(
                                         deviceName = Const.DEVICE_NAME,
                                         version = Const.VERSION
                                     ),
+                                    targetAddress = InetSocketAddress(state.broadcastAddress, Const.BROADCAST_SENDER_PORT),
                                     retryTimes = 0,
                                     callback = object : IClientManager.RequestCallback<Unit> {
                                         override fun onSuccess(
