@@ -1,6 +1,6 @@
 package com.tans.tlocalvideochat.webrtc.broadcast.sender
 
-import com.tans.tlocalvideochat.webrtc.broadcast.sender.model.RequestConnectReq
+import com.tans.tlocalvideochat.webrtc.broadcast.model.RequestConnectReq
 import java.net.InetAddress
 
 data class ConnectRequest(

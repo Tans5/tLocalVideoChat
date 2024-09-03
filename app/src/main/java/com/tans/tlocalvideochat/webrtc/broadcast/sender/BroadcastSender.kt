@@ -11,12 +11,13 @@ import com.tans.tlocalvideochat.net.netty.extensions.withServer
 import com.tans.tlocalvideochat.net.netty.getBroadcastAddress
 import com.tans.tlocalvideochat.net.netty.udp.NettyUdpConnectionTask
 import com.tans.tlocalvideochat.webrtc.Const
-import com.tans.tlocalvideochat.webrtc.broadcast.connectionActiveOrClosed
-import com.tans.tlocalvideochat.webrtc.broadcast.createStateFlowObserver
-import com.tans.tlocalvideochat.webrtc.broadcast.sender.model.BroadcastMsg
-import com.tans.tlocalvideochat.webrtc.broadcast.sender.model.RequestConnectReq
-import com.tans.tlocalvideochat.webrtc.broadcast.sender.model.RequestConnectResp
-import com.tans.tlocalvideochat.webrtc.broadcast.sender.model.SenderMsgType
+import com.tans.tlocalvideochat.webrtc.connectionActiveOrClosed
+import com.tans.tlocalvideochat.webrtc.createStateFlowObserver
+import com.tans.tlocalvideochat.webrtc.broadcast.model.BroadcastMsg
+import com.tans.tlocalvideochat.webrtc.broadcast.model.RequestConnectReq
+import com.tans.tlocalvideochat.webrtc.broadcast.model.RequestConnectResp
+import com.tans.tlocalvideochat.webrtc.broadcast.model.SenderMsgType
+import com.tans.tlocalvideochat.webrtc.connectionClosed
 import com.tans.tuiutils.state.CoroutineState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,7 +33,9 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicReference
 
-class BroadcastSender :
+class BroadcastSender(
+    private val broadcastSendDuration: Long = 500L
+) :
     CoroutineState<BroadcastSenderState> by CoroutineState(BroadcastSenderState.NoConnection),
     CoroutineScope by CoroutineScope(Dispatchers.IO) {
 
@@ -74,6 +77,9 @@ class BroadcastSender :
     suspend fun start(localAddress: InetAddress) {
         lock.withLock {
             val lastState = currentState()
+            if (lastState == BroadcastSenderState.Released) {
+                error("BroadcastSender already released.")
+            }
             if (lastState != BroadcastSenderState.NoConnection) {
                 error("BroadcastSender already started.")
             }
@@ -118,17 +124,6 @@ class BroadcastSender :
                 error("Start waiting connect server task fail.")
             }
 
-            val oldSenderTask = this@BroadcastSender.senderTask.getAndSet(senderTask)
-            if (oldSenderTask != null) {
-                AppLog.e(TAG, "Stop old broadcast sender task.")
-                oldSenderTask.stopTask()
-            }
-            val oldConnectTask = this.waitingConnectServerTask.getAndSet(waitingConnectServerTask)
-            if (oldConnectTask != null) {
-                AppLog.e(TAG, "Stop old waiting connect server task.")
-                oldConnectTask.stopTask()
-            }
-
             // Connection is created, do send broadcast and waiting connection close.
             val job = runCatching {
                 launch {
@@ -160,18 +155,18 @@ class BroadcastSender :
                             } else {
                                 AppLog.d(TAG, "Skip broadcast msg, because of state: $state")
                             }
-                            delay(500L)
+                            delay(broadcastSendDuration)
                         }
                     }
 
                     val senderConnectionJob = launch {
-                        senderTaskStateFlow.connectionActiveOrClosed()
+                        senderTaskStateFlow.connectionClosed()
                         AppLog.e(TAG, "Sender connection closed.")
                         closeChannel.emit(Unit)
                     }
 
                     val waitingConnectionJob = launch {
-                        waitingConnectServerStateFlow.connectionActiveOrClosed()
+                        waitingConnectServerStateFlow.connectionClosed()
                         AppLog.e(TAG, "Waiting connect connection closed.")
                         closeChannel.emit(Unit)
                     }
@@ -186,7 +181,25 @@ class BroadcastSender :
                     updateState { BroadcastSenderState.NoConnection }
                 }
             }.getOrNull()
-            updateState { BroadcastSenderState.Active(localAddress = localAddress, broadcastAddress = broadcastAddress, broadcastJob = job) }
+            if (job == null) {
+                senderTask.stopTask()
+                waitingConnectServerTask.stopTask()
+                updateState { BroadcastSenderState.NoConnection }
+                error("Create broadcast job fail.")
+            }
+
+            val oldSenderTask = this@BroadcastSender.senderTask.getAndSet(senderTask)
+            if (oldSenderTask != null) {
+                AppLog.e(TAG, "Stop old broadcast sender task.")
+                oldSenderTask.stopTask()
+            }
+            val oldConnectTask = this.waitingConnectServerTask.getAndSet(waitingConnectServerTask)
+            if (oldConnectTask != null) {
+                AppLog.e(TAG, "Stop old waiting connect server task.")
+                oldConnectTask.stopTask()
+            }
+
+            updateState { BroadcastSenderState.Active(localAddress = localAddress, broadcastAddress = broadcastAddress, senderJob = job) }
         }
     }
 
@@ -198,7 +211,7 @@ class BroadcastSender :
                     BroadcastSenderState.Active(
                         localAddress = state.localAddress,
                         broadcastAddress = state.broadcastAddress,
-                        broadcastJob = state.broadcastJob
+                        senderJob = state.senderJob
                     )
                 }
             }
@@ -213,7 +226,7 @@ class BroadcastSender :
                     BroadcastSenderState.Paused(
                         localAddress = state.localAddress,
                         broadcastAddress = state.broadcastAddress,
-                        broadcastJob = state.broadcastJob
+                        senderJob = state.senderJob
                     )
                 }
             }
@@ -222,6 +235,13 @@ class BroadcastSender :
 
     suspend fun stop() {
         lock.withLock {
+            val state = currentState()
+            if (state is BroadcastSenderState.Active) {
+                state.senderJob.cancel()
+            }
+            if (state is BroadcastSenderState.Paused) {
+                state.senderJob.cancel()
+            }
             senderTask.getAndSet(null)?.stopTask()
             waitingConnectServerTask.getAndSet(null)?.stopTask()
             updateState { BroadcastSenderState.NoConnection }
@@ -231,6 +251,7 @@ class BroadcastSender :
     fun release() {
         launch {
             stop()
+            updateState { BroadcastSenderState.Released }
             cancel()
         }
     }

@@ -1,4 +1,4 @@
-package com.tans.tlocalvideochat.webrtc.broadcast.sender.model
+package com.tans.tlocalvideochat.webrtc.broadcast.model
 
 enum class SenderMsgType(val type: Int) {
     BroadcastMsg(0),

@@ -13,6 +13,9 @@ object Const {
     // UDP
     const val WAITING_CONNECT_SERVER_PORT = 19961
 
+    // UDP
+    const val REQUEST_CONNECT_CLIENT_PORT = 19962
+
     // TCP
-    const val SIGNALING_SERVER_PORT = 19962
+    const val SIGNALING_SERVER_PORT = 19963
 }

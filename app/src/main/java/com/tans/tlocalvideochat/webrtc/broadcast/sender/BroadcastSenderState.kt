@@ -12,12 +12,14 @@ sealed class BroadcastSenderState {
     data class Active(
         val localAddress: InetAddress,
         val broadcastAddress: InetAddress,
-        val broadcastJob: Job?
+        val senderJob: Job
     ) : BroadcastSenderState()
 
     data class Paused(
         val localAddress: InetAddress,
         val broadcastAddress: InetAddress,
-        val broadcastJob: Job?
+        val senderJob: Job
     ) : BroadcastSenderState()
+
+    data object Released : BroadcastSenderState()
 }
