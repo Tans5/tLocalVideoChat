@@ -1,7 +1,7 @@
 package com.tans.tlocalvideochat.webrtc.broadcast.sender
 
+import com.tans.tlocalvideochat.webrtc.InetAddressWrapper
 import kotlinx.coroutines.Job
-import java.net.InetAddress
 
 sealed class BroadcastSenderState {
 
@@ -10,14 +10,14 @@ sealed class BroadcastSenderState {
     data object Requesting : BroadcastSenderState()
 
     data class Active(
-        val localAddress: InetAddress,
-        val broadcastAddress: InetAddress,
+        val localAddress: InetAddressWrapper,
+        val broadcastAddress: InetAddressWrapper,
         val senderJob: Job
     ) : BroadcastSenderState()
 
     data class Paused(
-        val localAddress: InetAddress,
-        val broadcastAddress: InetAddress,
+        val localAddress: InetAddressWrapper,
+        val broadcastAddress: InetAddressWrapper,
         val senderJob: Job
     ) : BroadcastSenderState()
 

@@ -9,14 +9,17 @@ import com.tans.tlocalvideochat.net.netty.extensions.withServer
 import com.tans.tlocalvideochat.net.netty.getBroadcastAddress
 import com.tans.tlocalvideochat.net.netty.udp.NettyUdpConnectionTask
 import com.tans.tlocalvideochat.webrtc.Const
+import com.tans.tlocalvideochat.webrtc.InetAddressWrapper
 import com.tans.tlocalvideochat.webrtc.connectionActiveOrClosed
 import com.tans.tlocalvideochat.webrtc.createStateFlowObserver
 import com.tans.tlocalvideochat.webrtc.broadcast.model.BroadcastMsg
 import com.tans.tlocalvideochat.webrtc.broadcast.model.RequestConnectReq
 import com.tans.tlocalvideochat.webrtc.broadcast.model.RequestConnectResp
 import com.tans.tlocalvideochat.webrtc.broadcast.model.SenderMsgType
+import com.tans.tlocalvideochat.webrtc.broadcast.sender.BroadcastSenderState
 import com.tans.tlocalvideochat.webrtc.connectionClosed
 import com.tans.tlocalvideochat.webrtc.requestSimplifySuspend
+import com.tans.tlocalvideochat.webrtc.wrap
 import com.tans.tuiutils.state.CoroutineState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -59,7 +62,8 @@ class BroadcastReceiver(
             responseType = SenderMsgType.BroadcastMsg.type,
             log = AppLog,
             onRequest = { _, ra, msg, _ ->
-                if (ra != null) {
+                val s = currentState() as? BroadcastReceiverState.Active
+                if (ra != null && !s?.localAddress?.address?.address.contentEquals(ra.address.address)) {
                     newRemoteDeviceFound(ra.address, msg)
                 }
                 null
@@ -69,7 +73,7 @@ class BroadcastReceiver(
 
     fun observeRemoteDevices(): Flow<List<ScannedDevice>> = remoteDevicesFlow
 
-    suspend fun start(localAddress: InetAddress) {
+    suspend fun start(localAddress: InetAddressWrapper) {
         lock.withLock {
             val state = currentState()
             if (state == BroadcastReceiverState.Released) {
@@ -79,12 +83,12 @@ class BroadcastReceiver(
                 error("BroadcastReceiver already started.")
             }
             updateState { BroadcastReceiverState.Requesting }
-            val broadcastAddress = localAddress.getBroadcastAddress().first
+            val broadcastAddress = localAddress.address.getBroadcastAddress().first.wrap()
 
             // Receiver task
             val receiverTask = NettyUdpConnectionTask(
                 connectionType = NettyUdpConnectionTask.Companion.ConnectionType.Bind(
-                    address = broadcastAddress,
+                    address = broadcastAddress.address,
                     port = Const.BROADCAST_SENDER_PORT
                 ),
                 enableBroadcast = true
@@ -104,7 +108,7 @@ class BroadcastReceiver(
             // Request connect task
             val requestConnectTask = NettyUdpConnectionTask(
                 connectionType = NettyUdpConnectionTask.Companion.ConnectionType.Bind(
-                    address = localAddress,
+                    address = localAddress.address,
                     port = Const.REQUEST_CONNECT_CLIENT_PORT
                 )
             ).withClient<ConnectionClientImpl>(log = AppLog)

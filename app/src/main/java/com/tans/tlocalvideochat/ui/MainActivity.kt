@@ -120,7 +120,7 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(
                         lastSenderJob = launch {
                             while (true) {
                                 runCatching {
-                                    broadcastSender.start(address.address)
+                                    broadcastSender.start(address)
                                 }.onSuccess {
                                     AppLog.d(TAG, "Start broadcast sender success.")
                                     broadcastSender.stateFlow()
@@ -138,7 +138,7 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(
                         lastReceiverJob = launch {
                             while (true) {
                                 runCatching {
-                                    broadcastReceiver.start(address.address)
+                                    broadcastReceiver.start(address)
                                 }.onSuccess {
                                     AppLog.d(TAG, "Start broadcast receiver success.")
                                     broadcastReceiver.stateFlow()

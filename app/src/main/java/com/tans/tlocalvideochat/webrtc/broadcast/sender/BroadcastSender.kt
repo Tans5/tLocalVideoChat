@@ -11,6 +11,7 @@ import com.tans.tlocalvideochat.net.netty.extensions.withServer
 import com.tans.tlocalvideochat.net.netty.getBroadcastAddress
 import com.tans.tlocalvideochat.net.netty.udp.NettyUdpConnectionTask
 import com.tans.tlocalvideochat.webrtc.Const
+import com.tans.tlocalvideochat.webrtc.InetAddressWrapper
 import com.tans.tlocalvideochat.webrtc.connectionActiveOrClosed
 import com.tans.tlocalvideochat.webrtc.createStateFlowObserver
 import com.tans.tlocalvideochat.webrtc.broadcast.model.BroadcastMsg
@@ -18,6 +19,7 @@ import com.tans.tlocalvideochat.webrtc.broadcast.model.RequestConnectReq
 import com.tans.tlocalvideochat.webrtc.broadcast.model.RequestConnectResp
 import com.tans.tlocalvideochat.webrtc.broadcast.model.SenderMsgType
 import com.tans.tlocalvideochat.webrtc.connectionClosed
+import com.tans.tlocalvideochat.webrtc.wrap
 import com.tans.tuiutils.state.CoroutineState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -74,7 +76,7 @@ class BroadcastSender(
 
     fun observeConnectRequest(): Flow<ConnectRequest> = connectRequestFlow
 
-    suspend fun start(localAddress: InetAddress) {
+    suspend fun start(localAddress: InetAddressWrapper) {
         lock.withLock {
             val lastState = currentState()
             if (lastState == BroadcastSenderState.Released) {
@@ -86,10 +88,10 @@ class BroadcastSender(
             updateState { BroadcastSenderState.Requesting }
 
             // Broadcast sender task.
-            val broadcastAddress = localAddress.getBroadcastAddress().first
+            val broadcastAddress = localAddress.address.getBroadcastAddress().first.wrap()
             val senderTask = NettyUdpConnectionTask(
                 connectionType = NettyUdpConnectionTask.Companion.ConnectionType.Connect(
-                    address = broadcastAddress,
+                    address = broadcastAddress.address,
                     port = Const.BROADCAST_SENDER_PORT
                 ),
                 enableBroadcast = true
@@ -109,7 +111,7 @@ class BroadcastSender(
             // Waiting connect server task.
             val waitingConnectServerTask = NettyUdpConnectionTask(
                 connectionType = NettyUdpConnectionTask.Companion.ConnectionType.Bind(
-                    address = localAddress,
+                    address = localAddress.address,
                     port = Const.WAITING_CONNECT_SERVER_PORT
                 )
             ).withServer<ConnectionServerImpl>(log = AppLog)
@@ -140,7 +142,7 @@ class BroadcastSender(
                                         deviceName = Const.DEVICE_NAME,
                                         version = Const.VERSION
                                     ),
-                                    targetAddress = InetSocketAddress(state.broadcastAddress, Const.BROADCAST_SENDER_PORT),
+                                    targetAddress = InetSocketAddress(state.broadcastAddress.address, Const.BROADCAST_SENDER_PORT),
                                     retryTimes = 0,
                                     callback = object : IClientManager.RequestCallback<Unit> {
                                         override fun onSuccess(
