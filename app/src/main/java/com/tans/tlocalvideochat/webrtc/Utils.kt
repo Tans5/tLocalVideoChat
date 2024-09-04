@@ -1,5 +1,6 @@
 package com.tans.tlocalvideochat.webrtc
 
+import android.os.Parcelable
 import com.tans.tlocalvideochat.net.netty.INettyConnectionTask
 import com.tans.tlocalvideochat.net.netty.NettyConnectionObserver
 import com.tans.tlocalvideochat.net.netty.NettyTaskState
@@ -11,8 +12,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.parcelize.Parcelize
 import java.io.IOException
+import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.NetworkInterface
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -116,3 +120,33 @@ suspend inline fun <reified Req, reified Resp> IClientManager.requestSimplifySus
         )
     }
 }
+
+@Parcelize
+data class InetAddressWrapper(
+    val address: InetAddress
+) : Parcelable {
+    override fun hashCode(): Int {
+        return address.address.contentHashCode()
+    }
+
+    override fun equals(other: Any?): Boolean {
+        return if (other is InetAddressWrapper) {
+            address.address.contentEquals(other.address.address)
+        } else {
+            false
+        }
+    }
+
+    override fun toString(): String {
+        val bytes = address.address
+        // Only support ipv4
+        return if (bytes.size == 4) {
+            val ni = NetworkInterface.getByInetAddress(address).interfaceAddresses.first { it.address.address.contentEquals(address.address) }
+            "${bytes[0].toUByte()}.${bytes[1].toUByte()}.${bytes[2].toUByte()}.${bytes[3].toUByte()}${if (ni != null) "/${ni.networkPrefixLength}" else ""}"
+        } else {
+            ""
+        }
+    }
+}
+
+fun InetAddress.wrap() = InetAddressWrapper(this)

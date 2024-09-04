@@ -3,7 +3,7 @@ package com.tans.tlocalvideochat.webrtc
 import android.os.Build
 
 object Const {
-    val DEVICE_NAME = "${Build.BRAND}-${Build.DEVICE}"
+    val DEVICE_NAME = "${Build.BRAND}-${Build.MODEL}"
 
     const val VERSION = 20240904
 
