@@ -17,6 +17,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:menu="@menu/main_activity_menu"
+            app:titleTextColor="@color/gray_900"
+            app:subtitleTextColor="@color/gray_500"
+            android:background="@color/white"
             tools:title="Device name"
             tools:subtitle="192.168.1.1/24" />
 
