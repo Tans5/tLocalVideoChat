@@ -7,7 +7,10 @@ import com.tans.tlocalvideochat.net.netty.NettyTaskState
 import com.tans.tlocalvideochat.net.netty.PackageData
 import com.tans.tlocalvideochat.net.netty.extensions.IClientManager
 import com.tans.tlocalvideochat.net.netty.extensions.requestSimplify
+import com.tans.tlocalvideochat.net.netty.tcp.NettyTcpServerConnectionTask
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
@@ -36,6 +39,15 @@ fun createStateFlowObserver(): Pair<Flow<NettyTaskState>, NettyConnectionObserve
         ) {}
     }
     return stateFlow to observer
+}
+
+fun createNewClientFlowObserver(): Pair<Flow<NettyTcpServerConnectionTask.ChildConnectionTask>, ((childConnection: NettyTcpServerConnectionTask.ChildConnectionTask) -> Unit)> {
+    val clientFlow = MutableSharedFlow<NettyTcpServerConnectionTask.ChildConnectionTask>(replay = 1, onBufferOverflow = BufferOverflow.DROP_LATEST)
+    val clientCallback = { clientTask: NettyTcpServerConnectionTask.ChildConnectionTask ->
+        clientFlow.tryEmit(clientTask)
+        Unit
+    }
+    return clientFlow to clientCallback
 }
 
 suspend fun Flow<NettyTaskState>.connectionActiveOrClosed(): Boolean {
