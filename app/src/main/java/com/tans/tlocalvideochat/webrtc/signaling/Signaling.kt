@@ -94,6 +94,13 @@ class Signaling : CoroutineState<SignalingState> by CoroutineState(SignalingStat
                             .withClient<ConnectionClientImpl>(log = AppLog)
                             .withServer<ConnectionServerClientImpl>(log = AppLog)
                     )?.stopTask()
+                    updateState {
+                        SignalingState.Active(
+                            localAddress = localAddress,
+                            remoteAddress = remoteAddress,
+                            isServer = false
+                        )
+                    }
                 } else {
                     clientConnectionTask.stopTask()
                     updateState { SignalingState.NoConnection }
