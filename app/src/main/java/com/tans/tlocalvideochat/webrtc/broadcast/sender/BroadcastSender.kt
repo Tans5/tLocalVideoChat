@@ -31,7 +31,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicReference
 
@@ -66,7 +65,7 @@ class BroadcastSender(
                 if (ra != null && isNew) {
                     AppLog.d(TAG, "Receive client request: ra=$ra, req=$req")
                     this@BroadcastSender.launch {
-                        connectRequestFlow.emit(ConnectRequest(request = req, remoteAddress = ra.address))
+                        connectRequestFlow.emit(ConnectRequest(request = req, remoteAddress = ra.address.wrap()))
                     }
                 }
                 RequestConnectResp(Const.DEVICE_NAME)

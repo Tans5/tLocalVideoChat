@@ -141,7 +141,7 @@ data class InetAddressWrapper(
         val bytes = address.address
         // Only support ipv4
         return if (bytes.size == 4) {
-            val ni = NetworkInterface.getByInetAddress(address).interfaceAddresses.first { it.address.address.contentEquals(address.address) }
+            val ni = NetworkInterface.getByInetAddress(address)?.interfaceAddresses?.first { it.address.address.contentEquals(address.address) }
             "${bytes[0].toUByte()}.${bytes[1].toUByte()}.${bytes[2].toUByte()}.${bytes[3].toUByte()}${if (ni != null) "/${ni.networkPrefixLength}" else ""}"
         } else {
             ""

@@ -15,6 +15,7 @@ import androidx.core.content.getSystemService
 import com.tans.tlocalvideochat.AppLog
 import com.tans.tlocalvideochat.R
 import com.tans.tlocalvideochat.databinding.MainActivityBinding
+import com.tans.tlocalvideochat.databinding.RemoteDeviceItemLayoutBinding
 import com.tans.tlocalvideochat.net.netty.findLocalAddressV4
 import com.tans.tlocalvideochat.webrtc.Const
 import com.tans.tlocalvideochat.webrtc.InetAddressWrapper
@@ -24,10 +25,16 @@ import com.tans.tlocalvideochat.webrtc.broadcast.sender.BroadcastSender
 import com.tans.tlocalvideochat.webrtc.broadcast.sender.BroadcastSenderState
 import com.tans.tlocalvideochat.webrtc.wrap
 import com.tans.tuiutils.activity.BaseCoroutineStateActivity
+import com.tans.tuiutils.adapter.impl.builders.SimpleAdapterBuilderImpl
+import com.tans.tuiutils.adapter.impl.databinders.DataBinderImpl
+import com.tans.tuiutils.adapter.impl.datasources.FlowDataSourceImpl
+import com.tans.tuiutils.adapter.impl.viewcreatators.SingleItemViewCreatorImpl
 import com.tans.tuiutils.permission.permissionsRequestSimplifySuspend
 import com.tans.tuiutils.systembar.annotation.ContentViewFitSystemWindow
 import com.tans.tuiutils.systembar.annotation.SystemBarStyle
+import com.tans.tuiutils.view.clicks
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -43,9 +50,7 @@ import kotlin.jvm.optionals.getOrNull
 
 @SystemBarStyle
 @ContentViewFitSystemWindow
-class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(
-    State()
-) {
+class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(State()) {
 
     override val layoutId: Int = R.layout.main_activity
 
@@ -163,6 +168,10 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(
         }
     }
 
+    private val connectLock: Mutex by lazy {
+        Mutex()
+    }
+
     override fun CoroutineScope.bindContentViewCoroutine(contentView: View) {
         launch {
             val viewBinding = MainActivityBinding.bind(contentView)
@@ -192,17 +201,67 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(
                     true
                 }
 
-                launch {
-                    broadcastReceiver.observeRemoteDevices()
+                viewBinding.remoteDevicesRv.adapter = SimpleAdapterBuilderImpl(
+                    itemViewCreator = SingleItemViewCreatorImpl(R.layout.remote_device_item_layout),
+                    dataSource = FlowDataSourceImpl(
+                        dataFlow = broadcastReceiver.observeRemoteDevices(),
+                        areDataItemsTheSameParam = { d1, d2 -> d1.firstUpdateTime == d2.firstUpdateTime && d1.broadcastMsg == d2.broadcastMsg },
+                        areDataItemsContentTheSameParam = { d1, d2 -> d1.firstUpdateTime == d2.firstUpdateTime && d1.broadcastMsg == d2.broadcastMsg }
+                    ),
+                    dataBinder = DataBinderImpl { data, itemView, _ ->
+                        val itemViewBinding = RemoteDeviceItemLayoutBinding.bind(itemView)
+                        itemViewBinding.deviceNameTv.text = data.broadcastMsg.deviceName
+                        itemViewBinding.addressTv.text = data.remoteAddress.toString()
+
+                        itemViewBinding.root.clicks(coroutineScope = this@bindContentViewCoroutine, clickWorkOn = Dispatchers.IO) {
+                            if (!connectLock.isLocked && this@MainActivity.isVisible) {
+                                connectLock.withLock {
+                                    runCatching {
+                                        broadcastReceiver.requestConnect(data.remoteAddress)
+                                    }.onSuccess {
+                                        AppLog.d(TAG, "Request connect success.")
+                                        // TODO:
+                                    }.onFailure {
+                                        AppLog.e(TAG, "Request connect fail: ${it.message}", it)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ).build()
+
+                launch(Dispatchers.IO) {
+                    broadcastSender.observeConnectRequest()
                         .collect {
-                            // TODO:
-                            println(it)
+                            if (!connectLock.isLocked && this@MainActivity.isVisible)
+                                connectLock.withLock {
+                                    AppLog.d(TAG, "Receive request: $it")
+                                    // TODO:
+                                }
                         }
                 }
 
             } else {
                 finish()
             }
+        }
+    }
+
+    private var isVisible = false
+
+    override fun onResume() {
+        super.onResume()
+        isVisible = true
+        dataCoroutineScope.launch {
+            broadcastSender.resume()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        isVisible = false
+        dataCoroutineScope.launch {
+            broadcastSender.pause()
         }
     }
 

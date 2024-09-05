@@ -16,7 +16,6 @@ import com.tans.tlocalvideochat.webrtc.broadcast.model.BroadcastMsg
 import com.tans.tlocalvideochat.webrtc.broadcast.model.RequestConnectReq
 import com.tans.tlocalvideochat.webrtc.broadcast.model.RequestConnectResp
 import com.tans.tlocalvideochat.webrtc.broadcast.model.SenderMsgType
-import com.tans.tlocalvideochat.webrtc.broadcast.sender.BroadcastSenderState
 import com.tans.tlocalvideochat.webrtc.connectionClosed
 import com.tans.tlocalvideochat.webrtc.requestSimplifySuspend
 import com.tans.tlocalvideochat.webrtc.wrap
@@ -37,7 +36,7 @@ import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicReference
 
 class BroadcastReceiver(
-    private val remoteDevicesOutOfDateDuration: Long = 8000L
+    private val remoteDevicesOutOfDateDuration: Long = 4000L
 ) : CoroutineState<BroadcastReceiverState> by CoroutineState(BroadcastReceiverState.NoConnection), CoroutineScope by CoroutineScope(Dispatchers.IO) {
 
     private val lock by lazy {
@@ -64,7 +63,7 @@ class BroadcastReceiver(
             onRequest = { _, ra, msg, _ ->
                 val s = currentState() as? BroadcastReceiverState.Active
                 if (ra != null && !s?.localAddress?.address?.address.contentEquals(ra.address.address)) {
-                    newRemoteDeviceFound(ra.address, msg)
+                    newRemoteDeviceFound(ra.address.wrap(), msg)
                 }
                 null
             }
@@ -190,7 +189,7 @@ class BroadcastReceiver(
         }
     }
 
-    suspend fun requestConnect(remoteAddress: InetAddress): RequestConnectResp {
+    suspend fun requestConnect(remoteAddress: InetAddressWrapper): RequestConnectResp {
         return lock.withLock {
             val requestTask = requestConnectTask.get() ?: error("Request task is null")
             requestTask.requestSimplifySuspend<RequestConnectReq, RequestConnectResp>(
@@ -199,7 +198,7 @@ class BroadcastReceiver(
                     deviceName = Const.DEVICE_NAME,
                     version = Const.VERSION
                 ),
-                targetAddress = InetSocketAddress(remoteAddress, Const.WAITING_CONNECT_SERVER_PORT)
+                targetAddress = InetSocketAddress(remoteAddress.address, Const.WAITING_CONNECT_SERVER_PORT)
             )
         }
     }
@@ -225,12 +224,12 @@ class BroadcastReceiver(
         }
     }
 
-    private fun newRemoteDeviceFound(remoteAddress: InetAddress, msg: BroadcastMsg) {
+    private fun newRemoteDeviceFound(remoteAddress: InetAddressWrapper, msg: BroadcastMsg) {
         if (msg.version == Const.VERSION) {
             launch {
                 lock.withLock {
                     val oldDevices = remoteDevicesFlow.value
-                    val targetDevice = oldDevices.find { it.remoteAddress.address.contentEquals(remoteAddress.address) }
+                    val targetDevice = oldDevices.find { it.remoteAddress == remoteAddress }
                     val now = System.currentTimeMillis()
                     val newDevices = if (targetDevice == null) {
                         oldDevices + ScannedDevice(

@@ -25,4 +25,13 @@
 
     </com.google.android.material.appbar.AppBarLayout>
 
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/remote_devices_rv"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_behavior="com.google.android.material.appbar.AppBarLayout$ScrollingViewBehavior"
+        app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
+        tools:listitem="@layout/remote_device_item_layout"
+        tools:itemCount="3" />
+
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
