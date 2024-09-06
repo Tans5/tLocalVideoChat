@@ -24,7 +24,7 @@
         android:name=".App"
         tools:targetApi="34">
         <activity
-            android:name=".ui.MainActivity"
+            android:name=".ui.main.MainActivity"
             android:exported="true"
             android:configChanges="screenSize|orientation|uiMode"
             android:taskAffinity=".tLocalVideoChat"
@@ -36,6 +36,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".ui.chat.ChatActivity"
+            android:exported="true"
+            android:configChanges="screenSize|orientation|uiMode"
+            android:taskAffinity=".tLocalVideoChat"
+            android:launchMode="singleTask"
+            tools:ignore="DiscouragedApi,LockedOrientationActivity" />
     </application>
 
 </manifest>

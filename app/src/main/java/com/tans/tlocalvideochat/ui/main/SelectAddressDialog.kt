@@ -1,4 +1,4 @@
-package com.tans.tlocalvideochat.ui
+package com.tans.tlocalvideochat.ui.main
 
 import android.content.Context
 import android.view.LayoutInflater
@@ -8,6 +8,8 @@ import androidx.fragment.app.FragmentManager
 import com.tans.tlocalvideochat.R
 import com.tans.tlocalvideochat.databinding.AddressItemLayoutBinding
 import com.tans.tlocalvideochat.databinding.SelectAdddressDialogBinding
+import com.tans.tlocalvideochat.ui.CoroutineDialogCancelableResultCallback
+import com.tans.tlocalvideochat.ui.coroutineShowSafe
 import com.tans.tlocalvideochat.webrtc.InetAddressWrapper
 import com.tans.tuiutils.adapter.impl.builders.SimpleAdapterBuilderImpl
 import com.tans.tuiutils.adapter.impl.databinders.DataBinderImpl

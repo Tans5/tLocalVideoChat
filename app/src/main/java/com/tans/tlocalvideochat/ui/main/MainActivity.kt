@@ -1,4 +1,4 @@
-package com.tans.tlocalvideochat.ui
+package com.tans.tlocalvideochat.ui.main
 
 import android.Manifest
 import android.content.Context
@@ -17,6 +17,7 @@ import com.tans.tlocalvideochat.R
 import com.tans.tlocalvideochat.databinding.MainActivityBinding
 import com.tans.tlocalvideochat.databinding.RemoteDeviceItemLayoutBinding
 import com.tans.tlocalvideochat.net.netty.findLocalAddressV4
+import com.tans.tlocalvideochat.ui.chat.ChatActivity
 import com.tans.tlocalvideochat.webrtc.Const
 import com.tans.tlocalvideochat.webrtc.InetAddressWrapper
 import com.tans.tlocalvideochat.webrtc.broadcast.receiver.BroadcastReceiver
@@ -220,7 +221,17 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
                                         broadcastReceiver.requestConnect(data.remoteAddress)
                                     }.onSuccess {
                                         AppLog.d(TAG, "Request connect success.")
-                                        // TODO:
+                                        val localAddress = currentState().selectedAddress.getOrNull()
+                                        if (localAddress != null) {
+                                            startActivity(
+                                                ChatActivity.createIntent(
+                                                    context = this@MainActivity,
+                                                    localAddress = localAddress,
+                                                    remoteAddress = data.remoteAddress,
+                                                    isServer = false
+                                                )
+                                            )
+                                        }
                                     }.onFailure {
                                         AppLog.e(TAG, "Request connect fail: ${it.message}", it)
                                     }
@@ -236,7 +247,17 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
                             if (!connectLock.isLocked && this@MainActivity.isVisible)
                                 connectLock.withLock {
                                     AppLog.d(TAG, "Receive request: $it")
-                                    // TODO:
+                                    val localAddress = currentState().selectedAddress.getOrNull()
+                                    if (localAddress != null) {
+                                        startActivity(
+                                            ChatActivity.createIntent(
+                                                context = this@MainActivity,
+                                                localAddress = localAddress,
+                                                remoteAddress = it.remoteAddress,
+                                                isServer = true
+                                            )
+                                        )
+                                    }
                                 }
                         }
                 }
