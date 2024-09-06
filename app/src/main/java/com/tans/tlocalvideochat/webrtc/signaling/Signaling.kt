@@ -11,6 +11,7 @@ import com.tans.tlocalvideochat.net.netty.tcp.NettyTcpServerConnectionTask
 import com.tans.tlocalvideochat.webrtc.Const
 import com.tans.tlocalvideochat.webrtc.InetAddressWrapper
 import com.tans.tlocalvideochat.webrtc.connectionActiveOrClosed
+import com.tans.tlocalvideochat.webrtc.connectionClosed
 import com.tans.tlocalvideochat.webrtc.createNewClientFlowObserver
 import com.tans.tlocalvideochat.webrtc.createStateFlowObserver
 import com.tans.tlocalvideochat.webrtc.requestSimplifySuspend
@@ -29,8 +30,8 @@ import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.atomic.AtomicReference
 
 class Signaling(
-    private val exchangeSdp: (offer: SdpReq, isNew: Boolean) -> SdpResp,
-    private val requestIceCandidate: (iceCandidate: IceCandidateReq, isNew: Boolean) -> Unit
+    private val exchangeSdp: (offer: SdpReq, isNew: Boolean) -> SdpResp?,
+    private val remoteIceCandidate: (remoteIceCandidate: IceCandidateReq, isNew: Boolean) -> Unit
 ) : CoroutineState<SignalingState> by CoroutineState(SignalingState.NoConnection), CoroutineScope by CoroutineScope(Dispatchers.IO) {
 
     private val lock: Mutex by lazy {
@@ -62,7 +63,7 @@ class Signaling(
             responseType = SignalingMsgType.IceResp.type,
             log = AppLog,
             onRequest = { _, _, req, isNew ->
-                requestIceCandidate(req, isNew)
+                remoteIceCandidate(req, isNew)
             }
         )
     }
@@ -77,7 +78,7 @@ class Signaling(
                 error("Signaling already started.")
             }
             updateState { SignalingState.Requesting }
-            if (isServer) {
+            val (clientConnectionTask, clientConnectionStateFlow) = if (isServer) {
                 val (clientFlow, clientObserver) = createNewClientFlowObserver()
                 val serverConnectionTask = NettyTcpServerConnectionTask(
                     bindAddress = localAddress.address,
@@ -97,14 +98,9 @@ class Signaling(
                     clientTask.registerServer(sdpServer)
                     clientTask.registerServer(iceCandidateServer)
                     AppLog.d(TAG, "Client connected.")
-                    this.clientConnectionTask.getAndSet(clientTask)?.stopTask()
-                    updateState {
-                        SignalingState.Active(
-                            localAddress = localAddress,
-                            remoteAddress = remoteAddress,
-                            isServer = true
-                        )
-                    }
+                    val (clientStateFlow, clientStateObserver) = createStateFlowObserver()
+                    clientTask.addObserver(clientStateObserver)
+                    clientTask to clientStateFlow
                 } else {
                     serverConnectionTask.stopTask()
                     updateState { SignalingState.NoConnection }
@@ -120,23 +116,38 @@ class Signaling(
                 clientConnectionTask.startTask()
                 if (stateFlow.connectionActiveOrClosed()) {
                     AppLog.d(TAG, "Connect to signaling server success.")
-                    this.clientConnectionTask.getAndSet(
-                        clientConnectionTask
-                            .withClient<ConnectionClientImpl>(log = AppLog)
-                            .withServer<ConnectionServerClientImpl>(log = AppLog)
-                    )?.stopTask()
-                    updateState {
-                        SignalingState.Active(
-                            localAddress = localAddress,
-                            remoteAddress = remoteAddress,
-                            isServer = false
-                        )
-                    }
+                    clientConnectionTask
+                        .withClient<ConnectionClientImpl>(log = AppLog)
+                        .withServer<ConnectionServerClientImpl>(log = AppLog) to stateFlow
                 } else {
                     clientConnectionTask.stopTask()
                     updateState { SignalingState.NoConnection }
                     error("Connect to signaling server fail.")
                 }
+            }
+            this.clientConnectionTask.getAndSet(clientConnectionTask)?.stopTask()
+            val job = runCatching {
+                launch {
+                    clientConnectionStateFlow.connectionClosed()
+                    AppLog.d(TAG, "Connection closed.")
+                    clientConnectionTask.stopTask()
+                    serverConnectionTask.get()?.stopTask()
+                    updateState { SignalingState.NoConnection }
+                }
+            }.getOrNull()
+            if (job == null) {
+                clientConnectionTask.stopTask()
+                serverConnectionTask.get()?.stopTask()
+                updateState { SignalingState.NoConnection }
+                error("Create waiting coroutine job fail.")
+            }
+            updateState {
+                SignalingState.Active(
+                    localAddress = localAddress,
+                    remoteAddress = remoteAddress,
+                    isServer = isServer,
+                    signalingJob = job
+                )
             }
         }
     }
@@ -163,6 +174,11 @@ class Signaling(
 
     suspend fun stop() {
         lock.withLock {
+            currentState().let {
+                if (it is SignalingState.Active) {
+                    it.signalingJob.cancel()
+                }
+            }
             serverConnectionTask.getAndSet(null)?.stopTask()
             clientConnectionTask.getAndSet(null)?.stopTask()
             updateState { SignalingState.NoConnection }

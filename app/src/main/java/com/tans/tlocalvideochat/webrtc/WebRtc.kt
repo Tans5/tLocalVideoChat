@@ -7,10 +7,20 @@ import android.media.AudioManager
 import android.os.Build
 import androidx.core.content.getSystemService
 import com.tans.tlocalvideochat.AppLog
+import com.tans.tlocalvideochat.webrtc.signaling.Signaling
+import com.tans.tlocalvideochat.webrtc.signaling.model.IceCandidateReq
+import com.tans.tlocalvideochat.webrtc.signaling.model.SdpReq
+import com.tans.tlocalvideochat.webrtc.signaling.model.SdpResp
 import com.tans.tuiutils.state.CoroutineState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import okio.IOException
 import org.webrtc.Camera2Capturer
 import org.webrtc.Camera2Enumerator
 import org.webrtc.CameraEnumerationAndroid
@@ -25,10 +35,15 @@ import org.webrtc.PeerConnection
 import org.webrtc.PeerConnection.RTCConfiguration
 import org.webrtc.PeerConnectionFactory
 import org.webrtc.RtpTransceiver
+import org.webrtc.SdpObserver
+import org.webrtc.SessionDescription
 import org.webrtc.SimulcastVideoEncoderFactory
 import org.webrtc.SoftwareVideoEncoderFactory
 import org.webrtc.SurfaceTextureHelper
 import org.webrtc.audio.JavaAudioDeviceModule
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
  * 1. PeerConnection init local audio track and video track.
@@ -43,11 +58,15 @@ import org.webrtc.audio.JavaAudioDeviceModule
  */
 class WebRtc(
     private val context: Context
-): CoroutineState<Unit> by CoroutineState(Unit), CoroutineScope by CoroutineScope(Dispatchers.IO) {
+): CoroutineState<WebRtcState> by CoroutineState(WebRtcState.NotInit), CoroutineScope by CoroutineScope(Dispatchers.IO) {
 
     // region WebRtc
     val eglBaseContext: EglBase.Context by lazy {
         EglBase.create().eglBaseContext
+    }
+
+    private val localSdp: AtomicReference<SessionDescription?> by lazy {
+        AtomicReference()
     }
 
     // rtcConfig contains STUN and TURN servers list
@@ -67,10 +86,8 @@ class WebRtc(
     private val mediaConstraints by lazy {
         MediaConstraints().apply {
             mandatory.addAll(
-                listOf(
-                    MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"),
-                    MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true")
-                )
+                listOf(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"),
+                    MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"))
             )
         }
     }
@@ -102,7 +119,7 @@ class WebRtc(
                     .setUseHardwareNoiseSuppressor(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
                     .setAudioRecordErrorCallback(object : JavaAudioDeviceModule.AudioRecordErrorCallback {
                         override fun onWebRtcAudioRecordInitError(p0: String?) {
-                            AppLog.e(TAG, "onWebRtcAudioRecordInitError: p0")
+                            AppLog.e(TAG, "onWebRtcAudioRecordInitError: $p0")
                         }
 
                         override fun onWebRtcAudioRecordStartError(
@@ -267,8 +284,115 @@ class WebRtc(
 
     // endregion
 
-    fun start() {
-        // TODO:
+    private val signaling: Signaling by lazy {
+        Signaling(
+            exchangeSdp = { offer: SdpReq, isNew: Boolean ->
+                val localSdp = localSdp.get()
+                if (isNew) {
+                    if (localSdp == null) {
+                        val msg = "Local sdp is null."
+                        updateState { WebRtcState.Error(msg) }
+                        AppLog.e(TAG, msg)
+                    } else {
+                        val state = currentState()
+                        if (state is WebRtcState.SignalingActive) {
+                            val remoteSdp = SessionDescription(SessionDescription.Type.OFFER, offer.description)
+                            launch {
+                                runCatching {
+                                    this@WebRtc.setSdpSuspend(remoteSdp, true)
+                                }.onSuccess {
+                                    updateState { WebRtcState.SdpActive(lastState = state, offer = remoteSdp, answer = localSdp) }
+                                    AppLog.d(TAG, "Update remote sdp success: ${remoteSdp.description}")
+                                }.onFailure {
+                                    val msg = "Update remote sdp fail: ${it.message}"
+                                    updateState { WebRtcState.Error(msg) }
+                                    AppLog.e(TAG, msg)
+                                }
+                            }
+                        } else {
+                            val msg = "Wrong state: $state, need SignalingActive."
+                            updateState { WebRtcState.Error(msg) }
+                            AppLog.e(TAG, msg)
+                        }
+                    }
+                }
+                localSdp?.let {
+                    SdpResp(it.description)
+                }
+            },
+            remoteIceCandidate = { remoteIceCandidate: IceCandidateReq, isNew: Boolean ->
+                TODO("")
+            }
+        )
+    }
+
+    private val lock: Mutex by lazy {
+        Mutex()
+    }
+
+    suspend fun createRtcConnection(
+        localAddress: InetAddressWrapper,
+        remoteAddress: InetAddressWrapper,
+        isServer: Boolean) {
+        lock.withLock {
+            if (currentState() != WebRtcState.NotInit) {
+                error("WebRtc already started")
+            }
+            var signalingRetryTimes = 0
+            do {
+                val result = runCatching { signaling.start(localAddress, remoteAddress, isServer) }
+                if (result.isSuccess) {
+                    break
+                } else {
+                    delay(200)
+                    signalingRetryTimes ++
+                }
+            } while (signalingRetryTimes < 3)
+            if (signalingRetryTimes >= 3) {
+                val msg = "Signaling connect error."
+                updateState { WebRtcState.Error(msg) }
+                error(msg)
+            }
+            updateState { WebRtcState.SignalingActive(localAddress = localAddress, remoteAddress = remoteAddress, isServer = isServer) }
+
+            val localSdp = runCatching {
+                val sdp = createSdpSuspend(!isServer)
+                setSdpSuspend(sdp, false)
+                this@WebRtc.localSdp.set(sdp)
+                sdp
+            }.getOrNull()
+            if (localSdp == null) {
+                val msg = "Create local sdp fail."
+                updateState { WebRtcState.Error(msg) }
+                error(msg)
+            }
+            AppLog.d(TAG, "Create local sdp success: ${localSdp.description}")
+
+
+            if (!isServer) {
+                val remoteSdp = runCatching {
+                    val remoteSdp = SessionDescription(SessionDescription.Type.ANSWER, signaling.requestExchangeSdp(SdpReq(localSdp.description)).description)
+                    setSdpSuspend(remoteSdp, true)
+                    remoteSdp
+                }.getOrNull()
+                if (remoteSdp == null) {
+                    val msg = "Exchange sdp fail."
+                    updateState { WebRtcState.Error(msg) }
+                    error(msg)
+                }
+                AppLog.d(TAG, "Exchange sdp success, remoteSdp: ${remoteSdp.description}")
+                val lastState = currentState()
+                if (lastState !is WebRtcState.SignalingActive) {
+                    val msg = "Wrong state: $lastState, need SignalingActive state."
+                    updateState { WebRtcState.Error(msg) }
+                    error(msg)
+                }
+                updateState { WebRtcState.SdpActive(lastState = lastState, offer = localSdp, answer = remoteSdp) }
+            } else {
+                // Server waiting client request sdp
+                AppLog.d(TAG, "Server waiting client request sdp.")
+            }
+        }
     }
 
     fun switchCamera() {
@@ -287,16 +411,75 @@ class WebRtc(
         audioManager.isMicrophoneMute = !enable
     }
 
-    fun stop() {
-        // TODO:
-        localVideoTrack.dispose()
-        videoCapture.stopCapture()
-        videoCapture.dispose()
+    fun release() {
+        launch {
+            lock.withLock {
+                localVideoTrack.dispose()
+                videoCapture.stopCapture()
+                videoCapture.dispose()
+                localAudioTrack.dispose()
+                peerConnection.dispose()
+                signaling.release()
+                updateState { WebRtcState.Released }
+                cancel()
+            }
+        }
+    }
 
-        localAudioTrack.dispose()
+    private suspend fun createSdpSuspend(isOffer: Boolean): SessionDescription {
+        return suspendCancellableCoroutine { cont ->
+            val observer = object : SdpObserver {
+                override fun onCreateSuccess(sdp: SessionDescription?) {
+                    if (cont.isActive) {
+                        if (sdp != null) {
+                            cont.resume(sdp)
+                        } else {
+                            cont.resumeWithException(IOException("Create answer fail."))
+                        }
+                    }
+                }
 
-        peerConnection.dispose()
-        cancel()
+                override fun onCreateFailure(msg: String?) {
+                    if (cont.isActive) {
+                        cont.resumeWithException(IOException(msg ?: ""))
+                    }
+                }
+
+                override fun onSetSuccess() {}
+
+                override fun onSetFailure(p0: String?) {}
+            }
+            if (isOffer) {
+                peerConnection.createOffer(observer, mediaConstraints)
+            } else {
+                peerConnection.createAnswer(observer, mediaConstraints)
+            }
+        }
+    }
+
+    private suspend fun setSdpSuspend(dsp: SessionDescription, isRemote: Boolean) {
+        return suspendCancellableCoroutine { cont ->
+            val observer = object : SdpObserver {
+                override fun onCreateSuccess(sdp: SessionDescription?) {}
+                override fun onCreateFailure(msg: String?) {}
+                override fun onSetSuccess() {
+                    if (cont.isActive) {
+                        cont.resume(Unit)
+                    }
+                }
+
+                override fun onSetFailure(p0: String?) {
+                    if (cont.isActive) {
+                        cont.resumeWithException(IOException(p0 ?: ""))
+                    }
+                }
+            }
+            if (isRemote) {
+                peerConnection.setRemoteDescription(observer, dsp)
+            } else {
+                peerConnection.setLocalDescription(observer, dsp)
+            }
+        }
     }
 
 
