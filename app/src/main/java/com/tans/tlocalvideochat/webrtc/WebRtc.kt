@@ -181,6 +181,7 @@ class WebRtc(
 
             override fun onIceCandidate(ice: IceCandidate?) {
                 super.onIceCandidate(ice)
+                AppLog.d(TAG, "Local ice candidate update: $ice")
                 // TODO: Local ICE Candidate update.
             }
 
@@ -189,6 +190,7 @@ class WebRtc(
                 val track = transceiver?.receiver?.track()
                 if (track != null) {
                     if (track.kind() == MediaStreamTrack.VIDEO_TRACK_KIND) {
+                        AppLog.d(TAG, "Remote video track update.")
                         // TODO: Remote video track update.
                     }
                 }
@@ -287,37 +289,39 @@ class WebRtc(
     private val signaling: Signaling by lazy {
         Signaling(
             exchangeSdp = { offer: SdpReq, isNew: Boolean ->
-                val localSdp = localSdp.get()
                 if (isNew) {
-                    if (localSdp == null) {
-                        val msg = "Local sdp is null."
+                    val state = currentState()
+                    if (state is WebRtcState.SignalingActive) {
+                        val remoteSdp = SessionDescription(SessionDescription.Type.OFFER, offer.description)
+                        launch {
+                            runCatching {
+                                this@WebRtc.setSdpSuspend(remoteSdp, true)
+                                val sdp = this@WebRtc.createSdpSuspend(false)
+                                this@WebRtc.setSdpSuspend(sdp, false)
+                                this@WebRtc.localSdp.set(sdp)
+                                sdp
+                            }.onSuccess { sdp ->
+                                updateState { WebRtcState.SdpActive(lastState = state, offer = remoteSdp, answer = sdp) }
+                                AppLog.d(TAG, "Update remote sdp success: offer=${remoteSdp.description}, answer=${sdp.description}")
+                            }.onFailure {
+                                val msg = "Update remote sdp fail: ${it.message}"
+                                updateState { WebRtcState.Error(msg) }
+                                AppLog.e(TAG, msg)
+                            }
+                        }
+                        localSdp.get()?.let {
+                            SdpResp(it.description)
+                        }
+                    } else {
+                        val msg = "Wrong state: $state, need SignalingActive."
                         updateState { WebRtcState.Error(msg) }
                         AppLog.e(TAG, msg)
-                    } else {
-                        val state = currentState()
-                        if (state is WebRtcState.SignalingActive) {
-                            val remoteSdp = SessionDescription(SessionDescription.Type.OFFER, offer.description)
-                            launch {
-                                runCatching {
-                                    this@WebRtc.setSdpSuspend(remoteSdp, true)
-                                }.onSuccess {
-                                    updateState { WebRtcState.SdpActive(lastState = state, offer = remoteSdp, answer = localSdp) }
-                                    AppLog.d(TAG, "Update remote sdp success: ${remoteSdp.description}")
-                                }.onFailure {
-                                    val msg = "Update remote sdp fail: ${it.message}"
-                                    updateState { WebRtcState.Error(msg) }
-                                    AppLog.e(TAG, msg)
-                                }
-                            }
-                        } else {
-                            val msg = "Wrong state: $state, need SignalingActive."
-                            updateState { WebRtcState.Error(msg) }
-                            AppLog.e(TAG, msg)
-                        }
+                        null
                     }
-                }
-                localSdp?.let {
-                    SdpResp(it.description)
+                } else {
+                    localSdp.get()?.let {
+                        SdpResp(it.description)
+                    }
                 }
             },
             remoteIceCandidate = { remoteIceCandidate: IceCandidateReq, isNew: Boolean ->
@@ -355,21 +359,19 @@ class WebRtc(
             }
             updateState { WebRtcState.SignalingActive(localAddress = localAddress, remoteAddress = remoteAddress, isServer = isServer) }
 
-            val localSdp = runCatching {
-                val sdp = createSdpSuspend(!isServer)
-                setSdpSuspend(sdp, false)
-                this@WebRtc.localSdp.set(sdp)
-                sdp
-            }.getOrNull()
-            if (localSdp == null) {
-                val msg = "Create local sdp fail."
-                updateState { WebRtcState.Error(msg) }
-                error(msg)
-            }
-            AppLog.d(TAG, "Create local sdp success: ${localSdp.description}")
-
-
             if (!isServer) {
+                val localSdp = runCatching {
+                    val sdp = createSdpSuspend(true)
+                    setSdpSuspend(sdp, false)
+                    this@WebRtc.localSdp.set(sdp)
+                    sdp
+                }.getOrNull()
+                if (localSdp == null) {
+                    val msg = "Create local sdp fail."
+                    updateState { WebRtcState.Error(msg) }
+                    error(msg)
+                }
+                AppLog.d(TAG, "Create local sdp success: ${localSdp.description}")
                 val remoteSdp = runCatching {
                     val remoteSdp = SessionDescription(SessionDescription.Type.ANSWER, signaling.requestExchangeSdp(SdpReq(localSdp.description)).description)
                     setSdpSuspend(remoteSdp, true)
