@@ -3,6 +3,9 @@ package com.tans.tlocalvideochat.webrtc
 import android.content.Context
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.media.AudioAttributes
+import android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import androidx.core.content.getSystemService
@@ -97,7 +100,7 @@ class WebRtc(
     }
 
     private val remoteVideoTrack by lazy {
-        MutableSharedFlow<VideoTrack>()
+        MutableSharedFlow<VideoTrack>(replay = 1)
     }
 
     private val videoDecoderFactory by lazy {
@@ -409,6 +412,7 @@ class WebRtc(
             if (signalingRetryTimes >= 3) {
                 val msg = "Signaling connect error."
                 updateState { WebRtcState.Error(msg) }
+                AppLog.e(TAG, msg)
                 error(msg)
             }
             updateState { WebRtcState.SignalingActive(localAddress = localAddress, remoteAddress = remoteAddress, isServer = isServer) }
@@ -448,6 +452,9 @@ class WebRtc(
                 // Server waiting client request sdp
                 AppLog.d(TAG, "Server waiting client request sdp.")
             }
+            peerConnection.addTrack(localVideoTrack)
+            peerConnection.addTrack(localAudioTrack)
+            setupAudio()
         }
     }
 
@@ -513,6 +520,29 @@ class WebRtc(
             } else {
                 peerConnection.createAnswer(observer, mediaConstraints)
             }
+        }
+    }
+
+    private fun setupAudio() {
+        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+        audioManager.isMicrophoneMute = false
+        val playbackAttributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+            .build()
+        val audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+            .setAudioAttributes(playbackAttributes)
+            .setAcceptsDelayedFocusGain(true)
+            .build()
+        audioManager.requestAudioFocus(audioFocusRequest)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val allDevices = audioManager.availableCommunicationDevices
+            val selectedDevice = allDevices.find { it.type == TYPE_BUILTIN_SPEAKER } ?: allDevices.firstOrNull()
+            if (selectedDevice != null) {
+                audioManager.setCommunicationDevice(selectedDevice)
+            }
+        } else {
+            audioManager.isSpeakerphoneOn = true
         }
     }
 
