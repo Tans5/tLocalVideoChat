@@ -9,11 +9,12 @@ import com.tans.tlocalvideochat.databinding.ChatActivityBinding
 import com.tans.tlocalvideochat.webrtc.InetAddressWrapper
 import com.tans.tlocalvideochat.webrtc.WebRtc
 import com.tans.tuiutils.activity.BaseCoroutineStateActivity
-import com.tans.tuiutils.systembar.annotation.SystemBarStyle
+import com.tans.tuiutils.systembar.annotation.FullScreenStyle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import org.webrtc.RendererCommon.RendererEvents
 
-@SystemBarStyle
+@FullScreenStyle
 class ChatActivity : BaseCoroutineStateActivity<Unit>(Unit) {
 
     private val webRtc: WebRtc by lazyViewModelField("webRtc") {
@@ -37,7 +38,21 @@ class ChatActivity : BaseCoroutineStateActivity<Unit>(Unit) {
 
     override fun CoroutineScope.bindContentViewCoroutine(contentView: View) {
         val viewBinding = ChatActivityBinding.bind(contentView)
-
+        viewBinding.localRenderView.init(webRtc.eglBaseContext, object : RendererEvents {
+            override fun onFirstFrameRendered() {}
+            override fun onFrameResolutionChanged(p0: Int, p1: Int, p2: Int) {}
+        })
+        viewBinding.remoteRenderView.init(webRtc.eglBaseContext, object : RendererEvents {
+            override fun onFirstFrameRendered() {}
+            override fun onFrameResolutionChanged(p0: Int, p1: Int, p2: Int) {}
+        })
+        webRtc.localVideoTrack.addSink(viewBinding.localRenderView)
+        launch {
+            webRtc.observeRemoteVideoTrack()
+                .collect {
+                    it.addSink(viewBinding.remoteRenderView)
+                }
+        }
     }
 
     override fun onViewModelCleared() {

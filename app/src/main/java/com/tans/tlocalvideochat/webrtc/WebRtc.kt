@@ -16,6 +16,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
@@ -40,6 +43,7 @@ import org.webrtc.SessionDescription
 import org.webrtc.SimulcastVideoEncoderFactory
 import org.webrtc.SoftwareVideoEncoderFactory
 import org.webrtc.SurfaceTextureHelper
+import org.webrtc.VideoTrack
 import org.webrtc.audio.JavaAudioDeviceModule
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
@@ -90,6 +94,10 @@ class WebRtc(
                     MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"))
             )
         }
+    }
+
+    private val remoteVideoTrack by lazy {
+        MutableSharedFlow<VideoTrack>()
     }
 
     private val videoDecoderFactory by lazy {
@@ -182,7 +190,21 @@ class WebRtc(
             override fun onIceCandidate(ice: IceCandidate?) {
                 super.onIceCandidate(ice)
                 AppLog.d(TAG, "Local ice candidate update: $ice")
-                // TODO: Local ICE Candidate update.
+                if (ice != null) {
+                    this@WebRtc.launch {
+                        runCatching {
+                            signaling.sendIceCandidate(IceCandidateReq(
+                                sdpMid = ice.sdpMid,
+                                sdpMLineIndex = ice.sdpMLineIndex,
+                                sdp = ice.sdp
+                            ))
+                        }.onSuccess {
+                            AppLog.d(TAG, "Send ice candidate success.")
+                        }.onFailure {
+                            AppLog.e(TAG, "Send ice candidate fail.", it)
+                        }
+                    }
+                }
             }
 
             override fun onTrack(transceiver: RtpTransceiver?) {
@@ -191,7 +213,11 @@ class WebRtc(
                 if (track != null) {
                     if (track.kind() == MediaStreamTrack.VIDEO_TRACK_KIND) {
                         AppLog.d(TAG, "Remote video track update.")
-                        // TODO: Remote video track update.
+                        track as VideoTrack
+                        launch {
+                            remoteVideoTrack.firstOrNull()?.dispose()
+                            remoteVideoTrack.emit(track)
+                        }
                     }
                 }
             }
@@ -247,7 +273,7 @@ class WebRtc(
         source
     }
 
-    private val localVideoTrack by lazy {
+    val localVideoTrack by lazy {
         peerConnectionFactory.createVideoTrack("Video${System.currentTimeMillis()}", videoSource)
     }
     // endregion
@@ -292,21 +318,23 @@ class WebRtc(
                 if (isNew) {
                     val state = currentState()
                     if (state is WebRtcState.SignalingActive) {
-                        val remoteSdp = SessionDescription(SessionDescription.Type.OFFER, offer.description)
                         launch {
-                            runCatching {
-                                this@WebRtc.setSdpSuspend(remoteSdp, true)
-                                val sdp = this@WebRtc.createSdpSuspend(false)
-                                this@WebRtc.setSdpSuspend(sdp, false)
-                                this@WebRtc.localSdp.set(sdp)
-                                sdp
-                            }.onSuccess { sdp ->
-                                updateState { WebRtcState.SdpActive(lastState = state, offer = remoteSdp, answer = sdp) }
-                                AppLog.d(TAG, "Update remote sdp success: offer=${remoteSdp.description}, answer=${sdp.description}")
-                            }.onFailure {
-                                val msg = "Update remote sdp fail: ${it.message}"
-                                updateState { WebRtcState.Error(msg) }
-                                AppLog.e(TAG, msg)
+                            lock.withLock {
+                                val remoteSdp = SessionDescription(SessionDescription.Type.OFFER, offer.description)
+                                runCatching {
+                                    this@WebRtc.setSdpSuspend(remoteSdp, true)
+                                    val sdp = this@WebRtc.createSdpSuspend(false)
+                                    this@WebRtc.setSdpSuspend(sdp, false)
+                                    this@WebRtc.localSdp.set(sdp)
+                                    sdp
+                                }.onSuccess { sdp ->
+                                    updateState { WebRtcState.SdpActive(lastState = state, offer = remoteSdp, answer = sdp) }
+                                    AppLog.d(TAG, "Update remote sdp success: offer=${remoteSdp.description}, answer=${sdp.description}")
+                                }.onFailure {
+                                    val msg = "Update remote sdp fail: ${it.message}"
+                                    updateState { WebRtcState.Error(msg) }
+                                    AppLog.e(TAG, msg)
+                                }
                             }
                         }
                         localSdp.get()?.let {
@@ -325,7 +353,33 @@ class WebRtc(
                 }
             },
             remoteIceCandidate = { remoteIceCandidate: IceCandidateReq, isNew: Boolean ->
-                TODO("")
+                if (isNew) {
+                    launch {
+                        lock.withLock {
+                            val state = currentState()
+                            if (state !is WebRtcState.SdpActive && state !is WebRtcState.IceCandidateActive) {
+                                val msg = "Wrong state to handle remote ice candidate."
+                                updateState { WebRtcState.Error(msg) }
+                                AppLog.e(TAG, msg)
+                                return@withLock
+                            }
+                            val iceCandidate = IceCandidate(remoteIceCandidate.sdpMid, remoteIceCandidate.sdpMLineIndex, remoteIceCandidate.sdp)
+                            val setIceResult = peerConnection.addIceCandidate(iceCandidate)
+                            AppLog.d(TAG, "Set remote ice candidate result: $setIceResult")
+                            if (state is WebRtcState.SdpActive) {
+                                updateState {
+                                    WebRtcState.IceCandidateActive(lastState = state, remoteIceCandidates = listOf(iceCandidate))
+                                }
+                            } else {
+                                state as WebRtcState.IceCandidateActive
+                                updateState {
+                                    state.copy(remoteIceCandidates = state.remoteIceCandidates + iceCandidate)
+                                }
+                            }
+                        }
+                    }
+                }
+                Unit
             }
         )
     }
@@ -413,6 +467,8 @@ class WebRtc(
         audioManager.isMicrophoneMute = !enable
     }
 
+    fun observeRemoteVideoTrack(): Flow<VideoTrack> = remoteVideoTrack
+
     fun release() {
         launch {
             lock.withLock {
@@ -422,6 +478,7 @@ class WebRtc(
                 localAudioTrack.dispose()
                 peerConnection.dispose()
                 signaling.release()
+                remoteVideoTrack.firstOrNull()?.dispose()
                 updateState { WebRtcState.Released }
                 cancel()
             }

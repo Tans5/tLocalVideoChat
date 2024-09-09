@@ -21,7 +21,7 @@ sealed class WebRtcState {
 
     data class IceCandidateActive(
         val lastState: SdpActive,
-        val remoteIceCandidate: IceCandidate
+        val remoteIceCandidates: List<IceCandidate>
     ) : WebRtcState()
 
     data class Error(val msg: String) : WebRtcState()
