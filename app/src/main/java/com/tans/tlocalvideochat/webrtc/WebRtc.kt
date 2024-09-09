@@ -21,7 +21,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
@@ -218,7 +217,6 @@ class WebRtc(
                         AppLog.d(TAG, "Remote video track update.")
                         track as VideoTrack
                         launch {
-                            remoteVideoTrack.firstOrNull()?.dispose()
                             remoteVideoTrack.emit(track)
                         }
                     }
@@ -417,6 +415,10 @@ class WebRtc(
             }
             updateState { WebRtcState.SignalingActive(localAddress = localAddress, remoteAddress = remoteAddress, isServer = isServer) }
 
+            setupAudio()
+            peerConnection.addTrack(localVideoTrack)
+            peerConnection.addTrack(localAudioTrack)
+
             if (!isServer) {
                 val localSdp = runCatching {
                     val sdp = createSdpSuspend(true)
@@ -452,9 +454,6 @@ class WebRtc(
                 // Server waiting client request sdp
                 AppLog.d(TAG, "Server waiting client request sdp.")
             }
-            peerConnection.addTrack(localVideoTrack)
-            peerConnection.addTrack(localAudioTrack)
-            setupAudio()
         }
     }
 
@@ -485,7 +484,6 @@ class WebRtc(
                 localAudioTrack.dispose()
                 peerConnection.dispose()
                 signaling.release()
-                remoteVideoTrack.firstOrNull()?.dispose()
                 updateState { WebRtcState.Released }
                 cancel()
             }
@@ -532,6 +530,7 @@ class WebRtc(
             .build()
         val audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
             .setAudioAttributes(playbackAttributes)
+            .setOnAudioFocusChangeListener {  }
             .setAcceptsDelayedFocusGain(true)
             .build()
         audioManager.requestAudioFocus(audioFocusRequest)

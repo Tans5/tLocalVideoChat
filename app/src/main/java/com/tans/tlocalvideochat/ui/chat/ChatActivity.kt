@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.view.View
+import android.widget.Toast
 import com.tans.tlocalvideochat.R
 import com.tans.tlocalvideochat.databinding.ChatActivityBinding
 import com.tans.tlocalvideochat.webrtc.InetAddressWrapper
@@ -11,7 +12,9 @@ import com.tans.tlocalvideochat.webrtc.WebRtc
 import com.tans.tuiutils.activity.BaseCoroutineStateActivity
 import com.tans.tuiutils.systembar.annotation.FullScreenStyle
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.webrtc.RendererCommon.RendererEvents
 
 @FullScreenStyle
@@ -31,6 +34,11 @@ class ChatActivity : BaseCoroutineStateActivity<Unit>(Unit) {
             if (localAddress != null && remoteAddress != null) {
                 runCatching {
                     webRtc.createRtcConnection(localAddress = localAddress, remoteAddress = remoteAddress, isServer = isServer)
+                }.onFailure {
+                    withContext(Dispatchers.Main) {
+                        val ctx = this@ChatActivity.applicationContext
+                        Toast.makeText(ctx, "Error: ${it.message}", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
