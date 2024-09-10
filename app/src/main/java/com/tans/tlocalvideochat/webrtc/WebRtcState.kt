@@ -1,6 +1,5 @@
 package com.tans.tlocalvideochat.webrtc
 
-import org.webrtc.IceCandidate
 import org.webrtc.SessionDescription
 
 sealed class WebRtcState {
@@ -19,17 +18,12 @@ sealed class WebRtcState {
         val answer: SessionDescription
     ) : WebRtcState()
 
-    data class IceCandidateActive(
-        val sdpState: SdpActive,
-        val remoteIceCandidates: List<IceCandidate>
-    ) : WebRtcState()
-
     data class RtcConnectionConnected(
-        val iceState: IceCandidateActive
+        val sdpState: SdpActive
     ) : WebRtcState()
 
     data class RtcConnectionDisconnected(
-        val iceState: IceCandidateActive
+        val sdpState: SdpActive
     ) : WebRtcState()
 
     data class Error(val msg: String) : WebRtcState()

@@ -197,7 +197,6 @@ class WebRtc(
                         lock.withLock {
                             val s = currentState()
                             if (s is WebRtcState.SdpActive ||
-                                s is WebRtcState.IceCandidateActive ||
                                 s is WebRtcState.RtcConnectionConnected) {
                                 runCatching {
                                     signaling.sendIceCandidate(IceCandidateReq(sdpMid = ice.sdpMid, sdpMLineIndex = ice.sdpMLineIndex, sdp = ice.sdp))
@@ -239,21 +238,19 @@ class WebRtc(
                             val s = currentState()
                             when (newState) {
                                 PeerConnection.PeerConnectionState.CONNECTED -> {
-                                    if (s is WebRtcState.IceCandidateActive) {
+                                    if (s is WebRtcState.SdpActive) {
                                         updateState { WebRtcState.RtcConnectionConnected(s) }
-                                    } else {
-                                        val msg = "ConnectionState: $newState, need last state is IceCandidateActive, but it is $s"
-                                        updateState { WebRtcState.Error(msg) }
-                                        AppLog.e(TAG, msg)
+                                    }
+                                    if (s is WebRtcState.RtcConnectionDisconnected) {
+                                        updateState { WebRtcState.RtcConnectionConnected(s.sdpState) }
                                     }
                                 }
                                 PeerConnection.PeerConnectionState.DISCONNECTED -> {
                                     if (s is WebRtcState.RtcConnectionConnected) {
-                                        updateState { WebRtcState.RtcConnectionDisconnected(s.iceState) }
-                                    } else {
-                                        val msg = "Connection disconnected."
-                                        updateState { WebRtcState.Error(msg) }
-                                        AppLog.e(TAG, msg)
+                                        updateState { WebRtcState.RtcConnectionDisconnected(s.sdpState) }
+                                    }
+                                    if (s is WebRtcState.SdpActive) {
+                                        updateState { WebRtcState.RtcConnectionDisconnected(s) }
                                     }
                                 }
                                 PeerConnection.PeerConnectionState.FAILED -> {
@@ -412,8 +409,9 @@ class WebRtc(
                     launch {
                         lock.withLock {
                             val state = currentState()
-                            if (state !is WebRtcState.SdpActive && state !is WebRtcState.IceCandidateActive) {
-                                val msg = "Wrong state to handle remote ice candidate."
+                            if (state !is WebRtcState.SdpActive &&
+                                state !is WebRtcState.RtcConnectionConnected) {
+                                val msg = "Wrong state: $state to handle remote ice candidate."
                                 updateState { WebRtcState.Error(msg) }
                                 AppLog.e(TAG, msg)
                                 return@withLock
@@ -421,16 +419,6 @@ class WebRtc(
                             val iceCandidate = IceCandidate(remoteIceCandidate.sdpMid, remoteIceCandidate.sdpMLineIndex, remoteIceCandidate.sdp)
                             val setIceResult = peerConnection.addIceCandidate(iceCandidate)
                             AppLog.d(TAG, "Set remote ice candidate result: $setIceResult")
-                            if (state is WebRtcState.SdpActive) {
-                                updateState {
-                                    WebRtcState.IceCandidateActive(sdpState = state, remoteIceCandidates = listOf(iceCandidate))
-                                }
-                            } else {
-                                state as WebRtcState.IceCandidateActive
-                                updateState {
-                                    state.copy(remoteIceCandidates = state.remoteIceCandidates + iceCandidate)
-                                }
-                            }
                         }
                     }
                 }
