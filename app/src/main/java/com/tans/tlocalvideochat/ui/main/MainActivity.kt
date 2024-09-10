@@ -215,7 +215,7 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
                         itemViewBinding.addressTv.text = data.remoteAddress.toString()
 
                         itemViewBinding.root.clicks(coroutineScope = this@bindContentViewCoroutine, clickWorkOn = Dispatchers.IO) {
-                            if (!connectLock.isLocked && this@MainActivity.isVisible) {
+                            if (!connectLock.isLocked) {
                                 connectLock.withLock {
                                     runCatching {
                                         broadcastReceiver.requestConnect(data.remoteAddress)
@@ -244,7 +244,7 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
                 launch(Dispatchers.IO) {
                     broadcastSender.observeConnectRequest()
                         .collect {
-                            if (!connectLock.isLocked && this@MainActivity.isVisible)
+                            if (!connectLock.isLocked)
                                 connectLock.withLock {
                                     AppLog.d(TAG, "Receive request: $it")
                                     val localAddress = currentState().selectedAddress.getOrNull()
@@ -268,11 +268,8 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
         }
     }
 
-    private var isVisible = false
-
     override fun onResume() {
         super.onResume()
-        isVisible = true
         dataCoroutineScope.launch {
             broadcastSender.resume()
         }
@@ -280,7 +277,6 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
 
     override fun onPause() {
         super.onPause()
-        isVisible = false
         dataCoroutineScope.launch {
             broadcastSender.pause()
         }

@@ -14,14 +14,22 @@ sealed class WebRtcState {
     ) : WebRtcState()
 
     data class SdpActive(
-        val lastState: SignalingActive,
+        val signalingState: SignalingActive,
         val offer: SessionDescription,
         val answer: SessionDescription
     ) : WebRtcState()
 
     data class IceCandidateActive(
-        val lastState: SdpActive,
+        val sdpState: SdpActive,
         val remoteIceCandidates: List<IceCandidate>
+    ) : WebRtcState()
+
+    data class RtcConnectionConnected(
+        val iceState: IceCandidateActive
+    ) : WebRtcState()
+
+    data class RtcConnectionDisconnected(
+        val iceState: IceCandidateActive
     ) : WebRtcState()
 
     data class Error(val msg: String) : WebRtcState()

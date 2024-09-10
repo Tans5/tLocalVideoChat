@@ -4,9 +4,17 @@
     <!--region MainActivity-->
     <string name="main_act_menu_more">More</string>
     <!--endregion-->
+
     <!--region SelectAddressDialog-->
     <string name="select_address_dialog_title">Select Address</string>
     <string name="select_address_dialog_cancel">Cancel</string>
     <string name="select_address_dialog_ok">OK</string>
+    <!--endregion-->
+
+    <!--region ChatActivity-->
+    <string name="chat_act_connection_error_title">Error</string>
+    <string name="chat_act_connection_disconnect_title">Disconnected</string>
+    <string name="chat_act_connection_disconnect_content">Rtc connection disconnected, please reconnect.</string>
+    <string name="chat_act_ok">OK</string>
     <!--endregion-->
 </resources>

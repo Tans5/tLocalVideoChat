@@ -115,7 +115,7 @@ class WebRtc(
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(context)
                 .setInjectableLogger({ message, severity, label ->
-                    AppLog.d(tag = "PeerConnectionFactory", msg = "[$severity] [$label]: $message")
+                    // AppLog.d(tag = "PeerConnectionFactory", msg = "[$severity] [$label]: $message")
                 }, Logging.Severity.LS_VERBOSE)
                 .createInitializationOptions()
         )
@@ -194,16 +194,24 @@ class WebRtc(
                 AppLog.d(TAG, "Local ice candidate update: $ice")
                 if (ice != null) {
                     this@WebRtc.launch {
-                        runCatching {
-                            signaling.sendIceCandidate(IceCandidateReq(
-                                sdpMid = ice.sdpMid,
-                                sdpMLineIndex = ice.sdpMLineIndex,
-                                sdp = ice.sdp
-                            ))
-                        }.onSuccess {
-                            AppLog.d(TAG, "Send ice candidate success.")
-                        }.onFailure {
-                            AppLog.e(TAG, "Send ice candidate fail.", it)
+                        lock.withLock {
+                            val s = currentState()
+                            if (s is WebRtcState.SdpActive ||
+                                s is WebRtcState.IceCandidateActive ||
+                                s is WebRtcState.RtcConnectionConnected) {
+                                runCatching {
+                                    signaling.sendIceCandidate(IceCandidateReq(sdpMid = ice.sdpMid, sdpMLineIndex = ice.sdpMLineIndex, sdp = ice.sdp))
+                                }.onSuccess {
+                                    AppLog.d(TAG, "Send ice candidate success.")
+                                }.onFailure {
+                                    val msg = "Send ice candidate fail: ${it.message}"
+                                    AppLog.e(TAG, msg, it)
+                                    updateState { WebRtcState.Error(msg) }
+                                }
+                            } else {
+                                val msg = "Wrong state $s, to send ice candidate."
+                                updateState { WebRtcState.Error(msg) }
+                            }
                         }
                     }
                 }
@@ -218,6 +226,45 @@ class WebRtc(
                         track as VideoTrack
                         launch {
                             remoteVideoTrack.emit(track)
+                        }
+                    }
+                }
+            }
+
+            override fun onConnectionChange(newState: PeerConnection.PeerConnectionState?) {
+                if (newState != null) {
+                    AppLog.d(TAG, "Connection state update: $newState")
+                    launch {
+                        lock.withLock {
+                            val s = currentState()
+                            when (newState) {
+                                PeerConnection.PeerConnectionState.CONNECTED -> {
+                                    if (s is WebRtcState.IceCandidateActive) {
+                                        updateState { WebRtcState.RtcConnectionConnected(s) }
+                                    } else {
+                                        val msg = "ConnectionState: $newState, need last state is IceCandidateActive, but it is $s"
+                                        updateState { WebRtcState.Error(msg) }
+                                        AppLog.e(TAG, msg)
+                                    }
+                                }
+                                PeerConnection.PeerConnectionState.DISCONNECTED -> {
+                                    if (s is WebRtcState.RtcConnectionConnected) {
+                                        updateState { WebRtcState.RtcConnectionDisconnected(s.iceState) }
+                                    } else {
+                                        val msg = "Connection disconnected."
+                                        updateState { WebRtcState.Error(msg) }
+                                        AppLog.e(TAG, msg)
+                                    }
+                                }
+                                PeerConnection.PeerConnectionState.FAILED -> {
+                                    val msg = "Create web rtc connection fail."
+                                    updateState { WebRtcState.Error(msg) }
+                                    AppLog.e(TAG, msg)
+                                }
+                                else -> {
+
+                                }
+                            }
                         }
                     }
                 }
@@ -275,7 +322,7 @@ class WebRtc(
     }
 
     val localVideoTrack by lazy {
-        peerConnectionFactory.createVideoTrack("Video${System.currentTimeMillis()}", videoSource)
+        peerConnectionFactory.createVideoTrack("Video${System.currentTimeMillis()}", videoSource)!!
     }
     // endregion
 
@@ -321,18 +368,25 @@ class WebRtc(
                     if (state is WebRtcState.SignalingActive) {
                         launch {
                             lock.withLock {
-                                val remoteSdp = SessionDescription(SessionDescription.Type.OFFER, offer.description)
-                                runCatching {
-                                    this@WebRtc.setSdpSuspend(remoteSdp, true)
-                                    val sdp = this@WebRtc.createSdpSuspend(false)
-                                    this@WebRtc.setSdpSuspend(sdp, false)
-                                    this@WebRtc.localSdp.set(sdp)
-                                    sdp
-                                }.onSuccess { sdp ->
-                                    updateState { WebRtcState.SdpActive(lastState = state, offer = remoteSdp, answer = sdp) }
-                                    AppLog.d(TAG, "Update remote sdp success: offer=${remoteSdp.description}, answer=${sdp.description}")
-                                }.onFailure {
-                                    val msg = "Update remote sdp fail: ${it.message}"
+                                val s = currentState()
+                                if (s is WebRtcState.SignalingActive) {
+                                    val remoteSdp = SessionDescription(SessionDescription.Type.OFFER, offer.description)
+                                    runCatching {
+                                        this@WebRtc.setSdpSuspend(remoteSdp, true)
+                                        val sdp = this@WebRtc.createSdpSuspend(false)
+                                        this@WebRtc.setSdpSuspend(sdp, false)
+                                        this@WebRtc.localSdp.set(sdp)
+                                        sdp
+                                    }.onSuccess { sdp ->
+                                        updateState { WebRtcState.SdpActive(signalingState = state, offer = remoteSdp, answer = sdp) }
+                                        AppLog.d(TAG, "Update remote sdp success: offer=${remoteSdp.description}, answer=${sdp.description}")
+                                    }.onFailure {
+                                        val msg = "Update remote sdp fail: ${it.message}"
+                                        updateState { WebRtcState.Error(msg) }
+                                        AppLog.e(TAG, msg)
+                                    }
+                                } else {
+                                    val msg = "Error state: $s, need SignalingActive state."
                                     updateState { WebRtcState.Error(msg) }
                                     AppLog.e(TAG, msg)
                                 }
@@ -369,7 +423,7 @@ class WebRtc(
                             AppLog.d(TAG, "Set remote ice candidate result: $setIceResult")
                             if (state is WebRtcState.SdpActive) {
                                 updateState {
-                                    WebRtcState.IceCandidateActive(lastState = state, remoteIceCandidates = listOf(iceCandidate))
+                                    WebRtcState.IceCandidateActive(sdpState = state, remoteIceCandidates = listOf(iceCandidate))
                                 }
                             } else {
                                 state as WebRtcState.IceCandidateActive
@@ -449,7 +503,7 @@ class WebRtc(
                     updateState { WebRtcState.Error(msg) }
                     error(msg)
                 }
-                updateState { WebRtcState.SdpActive(lastState = lastState, offer = localSdp, answer = remoteSdp) }
+                updateState { WebRtcState.SdpActive(signalingState = lastState, offer = localSdp, answer = remoteSdp) }
             } else {
                 // Server waiting client request sdp
                 AppLog.d(TAG, "Server waiting client request sdp.")
