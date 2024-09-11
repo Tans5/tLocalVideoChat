@@ -503,6 +503,10 @@ class WebRtc(
         videoCapture.switchCamera(null)
     }
 
+    fun switchCameraMirrorMode() {
+        videoCapture.mirrorCamera(!videoCapture.isMirrorCamera)
+    }
+
     fun enableCamera(enable: Boolean) {
         if (enable) {
             videoCapture.startCapture(cameraCaptureFormat.width, cameraCaptureFormat.height, 24)

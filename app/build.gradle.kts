@@ -79,5 +79,6 @@ dependencies {
     implementation(libs.netty)
 
     // webrtc
-    implementation(libs.webrtc)
+    // implementation(libs.webrtc)
+    implementation(files("libs/stream-webrtc-android-debug.aar"))
 }
