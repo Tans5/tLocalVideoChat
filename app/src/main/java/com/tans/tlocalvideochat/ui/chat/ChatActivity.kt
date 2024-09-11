@@ -13,6 +13,7 @@ import com.tans.tlocalvideochat.webrtc.WebRtc
 import com.tans.tlocalvideochat.webrtc.WebRtcState
 import com.tans.tuiutils.activity.BaseCoroutineStateActivity
 import com.tans.tuiutils.systembar.annotation.SystemBarStyle
+import com.tans.tuiutils.view.clicks
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOn
@@ -85,6 +86,19 @@ class ChatActivity : BaseCoroutineStateActivity<Unit>(Unit) {
                         else -> {}
                     }
                 }
+        }
+        viewBinding.switchCameraCard.clicks(this, 500L) {
+            webRtc.switchCamera()
+        }
+        viewBinding.mirrorCameraCard.clicks(this, 500L) {
+            webRtc.switchCameraMirrorMode()
+        }
+        viewBinding.root.clicks(this) {
+            if (viewBinding.optLayout.visibility == View.VISIBLE) {
+                viewBinding.optLayout.visibility = View.GONE
+            } else {
+                viewBinding.optLayout.visibility = View.VISIBLE
+            }
         }
     }
 
