@@ -81,4 +81,18 @@ dependencies {
     // webrtc
     // implementation(libs.webrtc)
     implementation(files("libs/stream-webrtc-android-debug.aar"))
+
+    // barcode scan
+    implementation(libs.barcodescan)
+
+    // qrcode gen
+    implementation(libs.qrcodegen)
+
+    // camerax
+    implementation(libs.camerax.core)
+    implementation(libs.camerax.camera2)
+    implementation(libs.camerax.lifecycle)
+    implementation(libs.camerax.video)
+    implementation(libs.camerax.view)
+    implementation(libs.camerax.extensions)
 }

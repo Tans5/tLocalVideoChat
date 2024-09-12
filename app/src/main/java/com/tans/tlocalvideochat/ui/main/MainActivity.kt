@@ -46,6 +46,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.util.Optional
 import kotlin.jvm.optionals.getOrNull
 
@@ -188,7 +189,7 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
                 renderStateNewCoroutine({ it.selectedAddress }) {
                     viewBinding.toolBar.subtitle = it.getOrNull()?.toString() ?: ""
                 }
-                viewBinding.toolBar.menu.findItem(R.id.main_act_menu_more).setOnMenuItemClickListener {
+                viewBinding.toolBar.menu.findItem(R.id.main_act_select_address).setOnMenuItemClickListener {
                     launch {
                         val s = currentState()
                         val selectedAddress = s.selectedAddress.getOrNull()
@@ -198,6 +199,26 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
                                 updateState { it.copy(selectedAddress = Optional.of(newSelected)) }
                             }
                         }
+                    }
+                    true
+                }
+
+                viewBinding.toolBar.menu.findItem(R.id.main_act_scan_qrcode).setOnMenuItemClickListener {
+                    // TODO: Scan QRCode
+                    true
+                }
+
+                var showQrcodeDialog: ShowQRCodeDialog? = null
+                viewBinding.toolBar.menu.findItem(R.id.main_act_show_qrcode).setOnMenuItemClickListener {
+                    val address = currentState().selectedAddress.getOrNull()
+                    if (address != null) {
+                        showQrcodeDialog?.let {
+                            if (it.isVisible) {
+                                it.dismissSafe()
+                            }
+                        }
+                        showQrcodeDialog = ShowQRCodeDialog(address)
+                        showQrcodeDialog?.showSafe(this@MainActivity.supportFragmentManager, "ShowQRCodeDialog#${System.currentTimeMillis()}")
                     }
                     true
                 }
@@ -223,14 +244,21 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
                                         AppLog.d(TAG, "Request connect success.")
                                         val localAddress = currentState().selectedAddress.getOrNull()
                                         if (localAddress != null) {
-                                            startActivity(
-                                                ChatActivity.createIntent(
-                                                    context = this@MainActivity,
-                                                    localAddress = localAddress,
-                                                    remoteAddress = data.remoteAddress,
-                                                    isServer = false
+                                            withContext(Dispatchers.Main) {
+                                                showQrcodeDialog?.let {
+                                                    if (it.isVisible) {
+                                                        it.dismissSafe()
+                                                    }
+                                                }
+                                                startActivity(
+                                                    ChatActivity.createIntent(
+                                                        context = this@MainActivity,
+                                                        localAddress = localAddress,
+                                                        remoteAddress = data.remoteAddress,
+                                                        isServer = false
+                                                    )
                                                 )
-                                            )
+                                            }
                                         }
                                     }.onFailure {
                                         AppLog.e(TAG, "Request connect fail: ${it.message}", it)
@@ -249,14 +277,21 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
                                     AppLog.d(TAG, "Receive request: $it")
                                     val localAddress = currentState().selectedAddress.getOrNull()
                                     if (localAddress != null) {
-                                        startActivity(
-                                            ChatActivity.createIntent(
-                                                context = this@MainActivity,
-                                                localAddress = localAddress,
-                                                remoteAddress = it.remoteAddress,
-                                                isServer = true
+                                        withContext(Dispatchers.Main) {
+                                            showQrcodeDialog?.let {
+                                                if (it.isVisible) {
+                                                    it.dismissSafe()
+                                                }
+                                            }
+                                            startActivity(
+                                                ChatActivity.createIntent(
+                                                    context = this@MainActivity,
+                                                    localAddress = localAddress,
+                                                    remoteAddress = it.remoteAddress,
+                                                    isServer = true
+                                                )
                                             )
-                                        )
+                                        }
                                     }
                                 }
                         }

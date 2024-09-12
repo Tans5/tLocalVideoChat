@@ -2,7 +2,9 @@
     <string name="app_name">tLocalVideoChat</string>
 
     <!--region MainActivity-->
-    <string name="main_act_menu_more">More</string>
+    <string name="main_act_menu_select_address">Select Address</string>
+    <string name="main_act_menu_scan_qr_code">Scan QRCode</string>
+    <string name="main_act_menu_show_qr_code">Show QRCode</string>
     <!--endregion-->
 
     <!--region SelectAddressDialog-->

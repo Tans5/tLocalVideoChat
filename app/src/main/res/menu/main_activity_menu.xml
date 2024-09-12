@@ -1,9 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
+
     <item
-        android:id="@+id/main_act_menu_more"
+        android:id="@+id/main_act_show_qrcode"
+        android:icon="@drawable/icon_qr_code"
+        android:title="@string/main_act_menu_show_qr_code"
+        app:showAsAction="ifRoom"/>
+
+    <item
+        android:id="@+id/main_act_scan_qrcode"
+        android:icon="@drawable/icon_qr_code_scan"
+        android:title="@string/main_act_menu_scan_qr_code"
+        app:showAsAction="ifRoom"/>
+
+    <item
+        android:id="@+id/main_act_select_address"
         android:icon="@drawable/icon_more"
-        android:title="@string/main_act_menu_more"
-        app:showAsAction="always"/>
+        android:title="@string/main_act_menu_select_address"
+        app:showAsAction="ifRoom"/>
 </menu>
