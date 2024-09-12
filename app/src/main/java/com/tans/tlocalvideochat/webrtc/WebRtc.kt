@@ -567,6 +567,7 @@ class WebRtc(
         }
     }
 
+    @Suppress("DEPRECATION")
     private fun setupAudio() {
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         audioManager.isMicrophoneMute = false
