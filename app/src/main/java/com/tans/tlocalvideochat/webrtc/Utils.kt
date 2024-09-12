@@ -1,6 +1,7 @@
 package com.tans.tlocalvideochat.webrtc
 
 import android.os.Parcelable
+import androidx.annotation.Keep
 import com.tans.tlocalvideochat.net.netty.INettyConnectionTask
 import com.tans.tlocalvideochat.net.netty.NettyConnectionObserver
 import com.tans.tlocalvideochat.net.netty.NettyTaskState
@@ -133,6 +134,7 @@ suspend inline fun <reified Req, reified Resp> IClientManager.requestSimplifySus
     }
 }
 
+@Keep
 @Parcelize
 data class InetAddressWrapper(
     val address: InetAddress

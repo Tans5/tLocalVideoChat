@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.view.View
+import androidx.core.os.BundleCompat
 import com.tans.tlocalvideochat.AppLog
 import com.tans.tlocalvideochat.R
 import com.tans.tlocalvideochat.databinding.ChatActivityBinding
@@ -114,17 +115,18 @@ class ChatActivity : BaseCoroutineStateActivity<Unit>(Unit) {
         private const val REMOTE_ADDRESS_EXTRA = "remote_address_extra"
         private const val IS_SERVER_EXTRA = "is_server_extra"
 
-        @Suppress("DEPRECATION")
-        fun Intent.getLocalAddress(): InetAddressWrapper? =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-                this.getParcelableExtra(LOCAL_ADDRESS_EXTRA, InetAddressWrapper::class.java)
-            else this.getParcelableExtra(LOCAL_ADDRESS_EXTRA)
+        fun Intent.getLocalAddress(): InetAddressWrapper? {
+            return extras?.let {
+                BundleCompat.getParcelable(it, LOCAL_ADDRESS_EXTRA, InetAddressWrapper::class.java)
+            }
+        }
 
-        @Suppress("DEPRECATION")
-        fun Intent.getRemoteAddress(): InetAddressWrapper? =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-                this.getParcelableExtra(REMOTE_ADDRESS_EXTRA, InetAddressWrapper::class.java)
-            else this.getParcelableExtra(REMOTE_ADDRESS_EXTRA)
+        fun Intent.getRemoteAddress(): InetAddressWrapper? {
+            return extras?.let {
+                BundleCompat.getParcelable(it, REMOTE_ADDRESS_EXTRA, InetAddressWrapper::class.java)
+            }
+        }
+
 
         fun Intent.isServer(): Boolean = this.getBooleanExtra(IS_SERVER_EXTRA, false)
 
