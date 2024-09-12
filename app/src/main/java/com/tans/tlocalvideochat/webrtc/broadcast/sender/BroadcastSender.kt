@@ -62,8 +62,8 @@ class BroadcastSender(
             responseType = SenderMsgType.ConnectResp.type,
             log = AppLog,
             onRequest = { _, ra, req, isNew ->
+                AppLog.d(TAG, "Receive client request: ra=$ra, req=$req")
                 if (ra != null && isNew) {
-                    AppLog.d(TAG, "Receive client request: ra=$ra, req=$req")
                     this@BroadcastSender.launch {
                         connectRequestFlow.emit(ConnectRequest(request = req, remoteAddress = ra.address.wrap()))
                     }

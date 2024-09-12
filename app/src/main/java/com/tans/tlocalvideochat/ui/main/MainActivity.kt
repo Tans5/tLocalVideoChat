@@ -43,6 +43,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -191,7 +192,7 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
                     viewBinding.toolBar.subtitle = it.getOrNull()?.toString() ?: ""
                 }
                 viewBinding.toolBar.menu.findItem(R.id.main_act_select_address).setOnMenuItemClickListener {
-                    launch {
+                    this@bindContentViewCoroutine.launch {
                         val s = currentState()
                         val selectedAddress = s.selectedAddress.getOrNull()
                         if (selectedAddress != null) {
@@ -205,7 +206,7 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
                 }
 
                 viewBinding.toolBar.menu.findItem(R.id.main_act_scan_qrcode).setOnMenuItemClickListener {
-                    launch {
+                    this@bindContentViewCoroutine.launch {
                         if (!connectLock.isLocked) {
                             connectLock.withLock {
                                 val address = supportFragmentManager.showScanQRCodeDialogSuspend()?.address?.toInetAddress()?.wrap()
@@ -216,7 +217,7 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
                                             broadcastReceiver.requestConnect(address)
                                         }
                                     }.onSuccess {
-                                        AppLog.d(TAG, "Request connect to $address success.")
+                                        AppLog.d(TAG, "Request connect to $address success $it")
                                         startActivity(
                                             ChatActivity.createIntent(
                                                 context = this@MainActivity,
@@ -268,7 +269,7 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
                                     runCatching {
                                         broadcastReceiver.requestConnect(data.remoteAddress)
                                     }.onSuccess {
-                                        AppLog.d(TAG, "Request connect to ${data.remoteAddress} success.")
+                                        AppLog.d(TAG, "Request connect to ${data.remoteAddress} success, $it")
                                         val localAddress = currentState().selectedAddress.getOrNull()
                                         if (localAddress != null) {
                                             withContext(Dispatchers.Main) {
@@ -296,29 +297,28 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
                     }
                 ).build()
 
-                launch(Dispatchers.IO) {
+                this@bindContentViewCoroutine.launch {
                     broadcastSender.observeConnectRequest()
+                        .flowOn(Dispatchers.IO)
                         .collect {
                             if (!connectLock.isLocked)
                                 connectLock.withLock {
                                     AppLog.d(TAG, "Receive request: $it")
                                     val localAddress = currentState().selectedAddress.getOrNull()
                                     if (localAddress != null) {
-                                        withContext(Dispatchers.Main) {
-                                            showQrcodeDialog?.let {
-                                                if (it.dialog?.isShowing == true) {
-                                                    it.dismissSafe()
-                                                }
+                                        showQrcodeDialog?.let {
+                                            if (it.dialog?.isShowing == true) {
+                                                it.dismissSafe()
                                             }
-                                            startActivity(
-                                                ChatActivity.createIntent(
-                                                    context = this@MainActivity,
-                                                    localAddress = localAddress,
-                                                    remoteAddress = it.remoteAddress,
-                                                    isServer = true
-                                                )
-                                            )
                                         }
+                                        startActivity(
+                                            ChatActivity.createIntent(
+                                                context = this@MainActivity,
+                                                localAddress = localAddress,
+                                                remoteAddress = it.remoteAddress,
+                                                isServer = true
+                                            )
+                                        )
                                     }
                                 }
                         }
