@@ -17,6 +17,7 @@ import com.tans.tlocalvideochat.R
 import com.tans.tlocalvideochat.databinding.MainActivityBinding
 import com.tans.tlocalvideochat.databinding.RemoteDeviceItemLayoutBinding
 import com.tans.tlocalvideochat.net.netty.findLocalAddressV4
+import com.tans.tlocalvideochat.net.netty.toInetAddress
 import com.tans.tlocalvideochat.ui.chat.ChatActivity
 import com.tans.tlocalvideochat.webrtc.Const
 import com.tans.tlocalvideochat.webrtc.InetAddressWrapper
@@ -204,7 +205,33 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
                 }
 
                 viewBinding.toolBar.menu.findItem(R.id.main_act_scan_qrcode).setOnMenuItemClickListener {
-                    // TODO: Scan QRCode
+                    launch {
+                        if (!connectLock.isLocked) {
+                            connectLock.withLock {
+                                val address = supportFragmentManager.showScanQRCodeDialogSuspend()?.address?.toInetAddress()?.wrap()
+                                val localAddress = currentState().selectedAddress.getOrNull()
+                                if (address != null && localAddress != null) {
+                                    runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            broadcastReceiver.requestConnect(address)
+                                        }
+                                    }.onSuccess {
+                                        AppLog.d(TAG, "Request connect to $address success.")
+                                        startActivity(
+                                            ChatActivity.createIntent(
+                                                context = this@MainActivity,
+                                                localAddress = localAddress,
+                                                remoteAddress = address,
+                                                isServer = false
+                                            )
+                                        )
+                                    }.onFailure {
+                                        AppLog.e(TAG, "Request connect to $address fail: ${it.message}", it)
+                                    }
+                                }
+                            }
+                        }
+                    }
                     true
                 }
 
@@ -213,7 +240,7 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
                     val address = currentState().selectedAddress.getOrNull()
                     if (address != null) {
                         showQrcodeDialog?.let {
-                            if (it.isVisible) {
+                            if (it.dialog?.isShowing == true) {
                                 it.dismissSafe()
                             }
                         }
@@ -241,12 +268,12 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
                                     runCatching {
                                         broadcastReceiver.requestConnect(data.remoteAddress)
                                     }.onSuccess {
-                                        AppLog.d(TAG, "Request connect success.")
+                                        AppLog.d(TAG, "Request connect to ${data.remoteAddress} success.")
                                         val localAddress = currentState().selectedAddress.getOrNull()
                                         if (localAddress != null) {
                                             withContext(Dispatchers.Main) {
                                                 showQrcodeDialog?.let {
-                                                    if (it.isVisible) {
+                                                    if (it.dialog?.isShowing == true) {
                                                         it.dismissSafe()
                                                     }
                                                 }
@@ -261,7 +288,7 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
                                             }
                                         }
                                     }.onFailure {
-                                        AppLog.e(TAG, "Request connect fail: ${it.message}", it)
+                                        AppLog.e(TAG, "Request connect to ${data.remoteAddress} fail: ${it.message}", it)
                                     }
                                 }
                             }
@@ -279,7 +306,7 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
                                     if (localAddress != null) {
                                         withContext(Dispatchers.Main) {
                                             showQrcodeDialog?.let {
-                                                if (it.isVisible) {
+                                                if (it.dialog?.isShowing == true) {
                                                     it.dismissSafe()
                                                 }
                                             }
