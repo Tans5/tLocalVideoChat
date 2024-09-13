@@ -114,7 +114,7 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
         launch {
             updateLocalAddress(delay = 0L)
             val selectedAddressChannel = Channel<Optional<InetAddressWrapper>>()
-            launch {
+            this@firstLaunchInitDataCoroutine.launch {
                 var lastSenderJob: Job? = null
                 var lastReceiverJob: Job? = null
                 for (addressOptional in selectedAddressChannel) {
@@ -126,7 +126,7 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
                     broadcastReceiver.stop()
                     if (address != null) {
                         // Sender
-                        lastSenderJob = launch {
+                        lastSenderJob = this@firstLaunchInitDataCoroutine.launch {
                             while (true) {
                                 runCatching {
                                     broadcastSender.start(address)
@@ -144,7 +144,7 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
                         }
 
                         // Receiver
-                        lastReceiverJob = launch {
+                        lastReceiverJob = this@firstLaunchInitDataCoroutine.launch {
                             while (true) {
                                 runCatching {
                                     broadcastReceiver.start(address)
@@ -188,7 +188,7 @@ class MainActivity : BaseCoroutineStateActivity<MainActivity.Companion.State>(St
             if (grant) {
                 viewBinding.toolBar.title = Const.DEVICE_NAME
 
-                renderStateNewCoroutine({ it.selectedAddress }) {
+                this@bindContentViewCoroutine.renderStateNewCoroutine({ it.selectedAddress }) {
                     viewBinding.toolBar.subtitle = it.getOrNull()?.toString() ?: ""
                 }
                 viewBinding.toolBar.menu.findItem(R.id.main_act_select_address).setOnMenuItemClickListener {

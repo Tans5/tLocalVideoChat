@@ -2,7 +2,6 @@ package com.tans.tlocalvideochat.ui.chat
 
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.view.View
 import androidx.core.os.BundleCompat
 import com.tans.tlocalvideochat.AppLog
